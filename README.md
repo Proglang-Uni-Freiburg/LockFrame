@@ -28,9 +28,7 @@ void join_event(ThreadID, TracePosition, ResourceName)
 
 ## Available detectors
 
-```
 * PWR (https://arxiv.org/pdf/2004.06969.pdf)
-```
 
 ## Create your own detector
 
