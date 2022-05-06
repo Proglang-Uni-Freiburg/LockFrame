@@ -18,12 +18,12 @@ ASSERT_EQ(lockFrame->get_races().size(), 1);
 ## Available events
 
 ```cpp
-void read_event(ThreadID, TracePosition, ResourceName)
-void write_event(ThreadID, TracePosition, ResourceName)
-void aquire_event(ThreadID, TracePosition, ResourceName)
-void release_event(ThreadID, TracePosition, ResourceName)
-void fork_event(ThreadID, TracePosition, ResourceName)
-void join_event(ThreadID, TracePosition, ResourceName)
+void read_event(ThreadID, TracePosition, ResourceName);
+void write_event(ThreadID, TracePosition, ResourceName);
+void aquire_event(ThreadID, TracePosition, ResourceName);
+void release_event(ThreadID, TracePosition, ResourceName);
+void fork_event(ThreadID, TracePosition, ResourceName);
+void join_event(ThreadID, TracePosition, ResourceName);
 ```
 
 ## Available detectors
