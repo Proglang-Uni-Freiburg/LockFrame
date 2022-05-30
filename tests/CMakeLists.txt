@@ -21,6 +21,8 @@ add_executable(
   ../lockframe.cpp
   ../vectorclock.cpp
   ../pwrdetector.cpp
+  ../pwrdetector_optimized.cpp
+  ../undead.cpp
 )
 target_link_libraries(
   lockframe_test

@@ -18,20 +18,20 @@ void LockFrame::write_event(ThreadID tid, TracePosition pos, ResourceName name) 
     detector->write_event(tid, pos, name);
 }
 
-void LockFrame::aquire_event(ThreadID tid, TracePosition pos, ResourceName name) {
-    detector->aquire_event(tid, pos, name);
+void LockFrame::acquire_event(ThreadID tid, TracePosition pos, ResourceName name) {
+    detector->acquire_event(tid, pos, name);
 }
 
 void LockFrame::release_event(ThreadID tid, TracePosition pos, ResourceName name) {
     detector->release_event(tid, pos, name);
 }
 
-void LockFrame::fork_event(ThreadID tid, TracePosition pos, ResourceName name) {
-    detector->fork_event(tid, pos, name);
+void LockFrame::fork_event(ThreadID tid, TracePosition pos, ThreadID tid2) {
+    detector->fork_event(tid, pos, tid2);
 }
 
-void LockFrame::join_event(ThreadID tid, TracePosition pos, ResourceName name) {
-    detector->join_event(tid, pos, name);
+void LockFrame::join_event(ThreadID tid, TracePosition pos, ThreadID tid2) {
+    detector->join_event(tid, pos, tid2);
 }
 
 void LockFrame::report_race(DataRace race) {
@@ -40,5 +40,6 @@ void LockFrame::report_race(DataRace race) {
 }
 
 std::vector<DataRace> LockFrame::get_races() {
+    detector->get_races();
     return races;
 }

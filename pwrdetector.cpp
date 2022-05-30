@@ -24,7 +24,7 @@ class PWRDetector : public Detector {
         // RW(x)
         std::unordered_map<ResourceName, std::vector<EpochLSPair>> read_write_events = {};
         // Acq(y)
-        std::unordered_map<ResourceName, Epoch> last_aquires = {};
+        std::unordered_map<ResourceName, Epoch> last_acquires = {};
         // L_w(x)
         std::unordered_map<ResourceName, VectorClock> last_writes_vc = {};
         // L_wt(x)
@@ -46,7 +46,7 @@ class PWRDetector : public Detector {
             std::vector<EpochVCPair> current_history = history.emplace(std::piecewise_construct, std::forward_as_tuple(resource_name), std::forward_as_tuple()).first->second;
             auto last_write_vc_ptr = last_writes_vc.find(resource_name);
             auto last_write_ls_ptr = last_writes_ls.find(resource_name);
-            auto last_aquire = last_aquires.find(resource_name);
+            auto last_acquire = last_acquires.find(resource_name);
 
             printf("\n---DEBUG [%s] T<%d> R<%s>---\n", text.c_str(), thread_id, resource_name.c_str());
             
@@ -83,8 +83,8 @@ class PWRDetector : public Detector {
             printf("}\n");
 
             printf("acq: ");
-            if(last_aquire != last_aquires.end()) {
-                printf("%d#%d", last_aquire->second.thread_id, last_aquire->second.value);
+            if(last_acquire != last_acquires.end()) {
+                printf("%d#%d", last_acquire->second.thread_id, last_acquire->second.value);
             }
             printf("\n");
 
@@ -111,6 +111,7 @@ class PWRDetector : public Detector {
 
         // w3
         void pwr_history_sync(ThreadID thread_id) {
+            debug_print("SYNC", thread_id, std::string("placeholder"));
             std::vector<ResourceName> current_lockset = lockset.emplace(std::piecewise_construct, std::forward_as_tuple(thread_id), std::forward_as_tuple()).first->second;
 
             for(ResourceName lock : current_lockset) {
@@ -120,6 +121,7 @@ class PWRDetector : public Detector {
                     VectorClock vector_clock = vector_clocks.emplace(std::piecewise_construct, std::forward_as_tuple(thread_id), std::forward_as_tuple()).first->second;
 
                     if(epoch_vc_pair.epoch.value < vector_clock.find(epoch_vc_pair.epoch.thread_id)) {
+                        printf("\nPWRMERGE\n");
                         vector_clocks[thread_id] = vector_clock.merge(epoch_vc_pair.vector_clock);
                     }
                 }
@@ -272,7 +274,7 @@ class PWRDetector : public Detector {
             debug_print("write", thread_id, resource_name);
         }
 
-        void aquire_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
+        void acquire_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
             std::vector<ResourceName> current_lockset = lockset.emplace(std::piecewise_construct, std::forward_as_tuple(thread_id), std::forward_as_tuple()).first->second;
             VectorClock current_vector_clock = vector_clocks.emplace(std::piecewise_construct, std::forward_as_tuple(thread_id), std::forward_as_tuple(thread_id)).first->second;
             
@@ -284,12 +286,12 @@ class PWRDetector : public Detector {
                 lockset[thread_id] = current_lockset;
             }
 
-            // Set Aquire History
-            last_aquires[resource_name] = Epoch { thread_id, current_vector_clock.find(thread_id) };
+            // Set acquire History
+            last_acquires[resource_name] = Epoch { thread_id, current_vector_clock.find(thread_id) };
             current_vector_clock.increment(thread_id);
             vector_clocks[thread_id] = current_vector_clock;
 
-            debug_print("aquire", thread_id, resource_name);
+            debug_print("acquire", thread_id, resource_name);
         }
 
         void release_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
@@ -306,10 +308,10 @@ class PWRDetector : public Detector {
 
             // Add to history
             std::vector<EpochVCPair> current_history = history.emplace(std::piecewise_construct, std::forward_as_tuple(resource_name), std::forward_as_tuple()).first->second;
-            auto last_aquire_ptr = last_aquires.find(resource_name);
+            auto last_acquire_ptr = last_acquires.find(resource_name);
             auto vector_clock_ptr = vector_clocks.find(thread_id);
             current_history.push_back(EpochVCPair{
-                last_aquire_ptr->second,
+                last_acquire_ptr->second,
                 (vector_clock_ptr != NULL) ? vector_clock_ptr->second : VectorClock(thread_id)
             });
             history[resource_name] = current_history;
@@ -323,11 +325,25 @@ class PWRDetector : public Detector {
             debug_print("release", thread_id, resource_name);
         }
 
-        void fork_event(ThreadID, TracePosition, ResourceName) {
+        void fork_event(ThreadID thread_id, TracePosition trace_position, ThreadID target_thread_id) {
+            VectorClock current_vector_clock = vector_clocks.emplace(std::piecewise_construct, std::forward_as_tuple(thread_id), std::forward_as_tuple(thread_id)).first->second;
+            
+            vector_clocks[target_thread_id] = current_vector_clock;
 
+            current_vector_clock.increment(thread_id);
+            vector_clocks[thread_id] = current_vector_clock;
         }
 
-        void join_event(ThreadID, TracePosition, ResourceName) {
+        void join_event(ThreadID thread_id, TracePosition trace_position, ThreadID target_thread_id) {
+            VectorClock current_vector_clock = vector_clocks.emplace(std::piecewise_construct, std::forward_as_tuple(thread_id), std::forward_as_tuple(thread_id)).first->second;
+            VectorClock target_vector_clock = vector_clocks.emplace(std::piecewise_construct, std::forward_as_tuple(target_thread_id), std::forward_as_tuple(target_thread_id)).first->second;
 
+            vector_clocks[thread_id] = current_vector_clock.merge(target_vector_clock);
+
+            current_vector_clock.increment(thread_id);
+            vector_clocks[thread_id] = current_vector_clock;
+        }
+
+        void get_races() {
         }
 };
