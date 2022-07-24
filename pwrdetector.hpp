@@ -1,4 +1,6 @@
 /**
+ * Implements the PWR algorithm found at https://github.com/sulzmann/source/blob/main/mplr2020-tr.pdf
+ * 
  * Optimizations:
  *      - Paper
  *      - Use pointers

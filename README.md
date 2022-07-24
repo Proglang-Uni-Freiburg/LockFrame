@@ -4,7 +4,7 @@ LockFrame is a framework that allows you to implement multiple dynamic deadlock/
 
 Detectors can easily be swapped inside the code in order to run them against each other.
 
-We also provide a trace file reader in the reader folder to run bigger traces from file.
+We also provide a trace file reader in the "reader" folder to run bigger traces from file.
 
 ## Usage
 
@@ -45,7 +45,6 @@ void get_races();
 
 ## Create your own detector
 
-
 Implement the `Detector` interface from detector.hpp
 
 ```cpp
@@ -53,3 +52,4 @@ class PWRDetector : public Detector {
     // ...
 }
 ```
+

@@ -1,6 +1,7 @@
 #include "pwrdetector.hpp"
 
-// w3
+// This function was originally called w3 in the paper.
+// In the mean time, the algorithm was renamed from w3po to PWR.
 void PWRDetector::pwr_history_sync(Thread* thread, Resource* resource) {
     for(ResourceName lock : thread->lockset) {
         auto current_history_iter = thread->history.find(lock);
