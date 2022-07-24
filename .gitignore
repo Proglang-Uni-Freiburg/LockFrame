@@ -1,2 +1,7 @@
 tests/build
 .vscode
+reader/CMakeFiles
+reader/CMakeCache.txt
+reader/Makefile
+reader/reader
+reader/cmake_install.cmake

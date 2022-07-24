@@ -5,7 +5,7 @@
 
 typedef int ThreadID;
 typedef int TracePosition;
-typedef std::string ResourceName;
+typedef int ResourceName;
 typedef struct {
     ResourceName resource_name;
     TracePosition trace_position;

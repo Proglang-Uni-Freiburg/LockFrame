@@ -13,6 +13,8 @@ class Detector {
         virtual void release_event(ThreadID, TracePosition, ResourceName) {}
         virtual void fork_event(ThreadID, TracePosition, ThreadID) {}
         virtual void join_event(ThreadID, TracePosition, ThreadID) {}
+        virtual void notify_event(ThreadID, TracePosition, ResourceName) {}
+        virtual void wait_event(ThreadID, TracePosition, ResourceName) {}
         virtual void get_races() {}
 };
 

@@ -1,9 +1,5 @@
 #include <vector>
 #include "lockframe.hpp"
-#include "detector.hpp"
-
-Detector* detector;
-std::vector<DataRace> races = {};
 
 void LockFrame::set_detector(Detector* d) {
     d->lockframe = this;
@@ -34,8 +30,16 @@ void LockFrame::join_event(ThreadID tid, TracePosition pos, ThreadID tid2) {
     detector->join_event(tid, pos, tid2);
 }
 
+void LockFrame::notify_event(ThreadID tid, TracePosition pos, ResourceName name) {
+    detector->notify_event(tid, pos, name);
+}
+
+void LockFrame::wait_event(ThreadID tid, TracePosition pos, ResourceName name) {
+    detector->wait_event(tid, pos, name);
+}
+
 void LockFrame::report_race(DataRace race) {
-    printf("\n---\nPOTENTIAL RACE FOUND %s@%d: T%d<-->T%d\n---\n", race.resource_name.c_str(), race.trace_position, race.thread_id_1, race.thread_id_2);
+    //printf("\n---\nPOTENTIAL RACE FOUND %s@%d: T%d<-->T%d\n---\n", race.resource_name.c_str(), race.trace_position, race.thread_id_1, race.thread_id_2);
     races.push_back(race);
 }
 

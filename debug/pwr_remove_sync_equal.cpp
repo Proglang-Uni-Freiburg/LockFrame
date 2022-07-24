@@ -1,12 +1,20 @@
 #include <vector>
+#include <deque>
 #include <unordered_map>
 #include <algorithm>
-#include "detector.hpp"
-#include "vectorclock.hpp"
+#include <memory>
+#include "../detector.hpp"
+#include "../vectorclock.hpp"
 
 #define THREAD_HISTORY_SIZE 5
 
-class PWRDetectorOptimized : public Detector {
+/**
+ * Optimizations:
+ *      - Paper
+ *      - Use pointers
+ *      - LocalHistRemove if V'[j] <= V[j]
+ */
+class PWRRemoveSyncEqual : public Detector {
     private:
         struct EpochVCPair {
             Epoch epoch;
@@ -15,13 +23,14 @@ class PWRDetectorOptimized : public Detector {
         struct EpochLSPair {
             Epoch epoch;
             std::vector<ResourceName> lockset;
+            bool is_write;
         };
         struct Thread {
             ThreadID id;
             // LS(i)
             std::vector<ResourceName> lockset = {};
             // H(y)
-            std::unordered_map<ResourceName, std::vector<EpochVCPair>> history = {};
+            std::unordered_map<ResourceName, std::deque<EpochVCPair>> history = {};
             // Th(i)
             VectorClock vector_clock = {};
         };
@@ -43,9 +52,10 @@ class PWRDetectorOptimized : public Detector {
 
         std::unordered_map<ThreadID, Thread> threads = {};
         std::unordered_map<ResourceName, Resource> resources = {};
+        std::unordered_map<ResourceName, VectorClock> notifies = {};
         // We don't know about all threads at the beginning, so we have to save a global history in order to load it into a newly spawned thread.
         // This history is still optimized for limited size.
-        std::unordered_map<ResourceName, std::vector<EpochVCPair>> global_history = {};
+        std::unordered_map<ResourceName, std::deque<EpochVCPair>> global_history = {};
 
         /**
          * We have a thread-local history, but other threads need to "know" what happened before they are first encountered,
@@ -77,7 +87,7 @@ class PWRDetectorOptimized : public Detector {
                     new_history[new_history_iter.first] = new_history_resource_vec;
                 }*/
 
-                std::unordered_map<ResourceName, std::vector<EpochVCPair>> new_history = {};
+                std::unordered_map<ResourceName, std::deque<EpochVCPair>> new_history = {};
                 for(auto history_pair : global_history) {
                     new_history[history_pair.first] = history_pair.second;
                 }
@@ -99,123 +109,29 @@ class PWRDetectorOptimized : public Detector {
         Resource* get_resource(ResourceName resource_name) {
             auto current_resource_ptr = resources.find(resource_name);
             if(current_resource_ptr == resources.end()) {
-                return &resources.insert({
+                /*return &resources.insert({
                     resource_name,
                     Resource{}
-                }).first->second;
+                }).first->second;*/
+                return &resources.insert(std::make_pair(resource_name, Resource{})).first->second;
             } else {
                 return &current_resource_ptr->second;
             }
         }
 
-        // Adds EpochVCPair to thread's history and global history.
-        // Limits history size per mutex to THREAD_HISTORY_SIZE (see at top of file).
-        void add_to_history(Thread* current_thread, ResourceName resource_name, EpochVCPair epoch_vc_pair) {
-            for(auto thread_iter = threads.begin(); thread_iter != threads.end(); ++thread_iter) {
-                if(thread_iter->first == current_thread->id) {
-                    continue;
-                }
-
-                auto current_history = &thread_iter->second.history.emplace(std::piecewise_construct, std::forward_as_tuple(resource_name), std::forward_as_tuple()).first->second;
-                if(current_history->size() >= THREAD_HISTORY_SIZE) {
-                    current_history->pop_back();
-                }
-                current_history->insert(current_history->begin(), epoch_vc_pair);
-            }
-
-            auto current_global_history = &global_history.emplace(std::piecewise_construct, std::forward_as_tuple(resource_name), std::forward_as_tuple()).first->second;
-            if(current_global_history->size() >= THREAD_HISTORY_SIZE) {
-                current_global_history->pop_back();
-            }
-            current_global_history->insert(current_global_history->begin(), epoch_vc_pair);
-        }
-
-        /**
-         * @brief Prints all current global variable values
-         * 
-         * @param text 
-         * @param thread_id 
-         * @param resource_name 
-         */
-        void debug_print(std::string text, ThreadID thread_id, ResourceName resource_name) {
-            Thread* thread = get_thread(thread_id);
-            Resource* resource = get_resource(resource_name);
-
-            printf("\n---DEBUG [%s] T<%d> R<%s>---\n", text.c_str(), thread_id, resource_name.c_str());
-            
-            printf("vc: { ");
-            for(auto epoch : thread->vector_clock.find_all()) {
-                printf("T%d:%d ", epoch.thread_id, epoch.value);
-            }
-            printf("}\n");
-
-            printf("lockset: { ");
-            for(auto res : thread->lockset) {
-                printf("%s", res.c_str());
-            }
-            printf(" }\n");
-
-            printf("history: {");
-            for(auto thread_iter = threads.begin(); thread_iter != threads.end(); ++thread_iter) {
-                std::vector<EpochVCPair> current_history = thread_iter->second.history.emplace(std::piecewise_construct, std::forward_as_tuple(resource_name), std::forward_as_tuple()).first->second;
-                printf(" T%d: { ", thread_iter->first);
-                for(auto pair : current_history) {
-                    printf("%d#%d, { ", pair.epoch.thread_id, pair.epoch.value);
-                    for(auto epoch : pair.vector_clock.find_all()) {
-                        printf("%d@%d ", epoch.thread_id, epoch.value);
-                    }
-                    printf("}");
-                }
-                printf(" }");
-            }
-            printf(" }\n");
-
-            printf("rw: { ");
-            for(auto pairs : resource->read_write_events) {
-                printf("%d#%d { ", pairs.epoch.thread_id, pairs.epoch.value);
-                for(auto res : pairs.lockset) {
-                    printf("%s", res.c_str());
-                }
-                printf(" } ");
-            }
-            printf("}\n");
-
-            printf("acq: ");
-                printf("%d#%d", resource->last_acquire.thread_id, resource->last_acquire.value);
-            printf("\n");
-
-            printf("l_w: { ");
-            if(resource->last_write_occured) {
-                for(auto epoch : resource->last_write_vc.find_all()) {
-                    printf("T%d:%d ", epoch.thread_id, epoch.value);
-                }
-            }
-            printf(" }\n");
-
-            printf("l_wt: %d\n", (resource->last_write_occured) ? resource->last_write_thread : 0);
-
-            printf("l_wls: { ");
-            if(resource->last_write_occured) {
-                for(auto res : resource->last_write_ls) {
-                    printf("%s ", res.c_str());
-                }
-            }
-            printf(" }\n");
-
-            printf("------\n");
-        }
-
         // w3
         void pwr_history_sync(Thread* thread, Resource* resource) {
             for(ResourceName lock : thread->lockset) {
-                auto current_history = thread->history.emplace(std::piecewise_construct, std::forward_as_tuple(lock), std::forward_as_tuple()).first->second;
+                auto current_history_iter = thread->history.find(lock);
+                if(current_history_iter == thread->history.end()) continue;
+                auto current_history = &current_history_iter->second;
 
-                for(auto epoch_vc_pair_iter = current_history.begin(); epoch_vc_pair_iter != current_history.end();) {
-                    if(epoch_vc_pair_iter->vector_clock.find(epoch_vc_pair_iter->epoch.thread_id) < thread->vector_clock.find(epoch_vc_pair_iter->epoch.thread_id)) {
-                        epoch_vc_pair_iter = current_history.erase(epoch_vc_pair_iter);
+                for(auto epoch_vc_pair_iter = current_history->begin(); epoch_vc_pair_iter != current_history->end();) {
+                    if(epoch_vc_pair_iter->vector_clock.find(epoch_vc_pair_iter->epoch.thread_id) <= thread->vector_clock.find(epoch_vc_pair_iter->epoch.thread_id)) {
+                        epoch_vc_pair_iter = current_history->erase(epoch_vc_pair_iter);
                     } else {
                         if(epoch_vc_pair_iter->epoch.value < thread->vector_clock.find(epoch_vc_pair_iter->epoch.thread_id)) {
-                            thread->vector_clock = thread->vector_clock.merge(epoch_vc_pair_iter->vector_clock);
+                            thread->vector_clock.merge_into(&epoch_vc_pair_iter->vector_clock);
                         }
 
                         ++epoch_vc_pair_iter;
@@ -225,27 +141,26 @@ class PWRDetectorOptimized : public Detector {
         }
 
         // RW = { (i#Th(i)[i], LS_t(i) } U { (j#k, L) | (j#k, L) e RW(x) AND k > Th(i)[i] }
-        void update_read_write_events(Thread* thread, Resource* resource) {
+        void update_read_write_events(Thread* thread, Resource* resource, bool is_write) {
             // (i#Th(i)[i], LS_t(i))
             // Current "timestamp" of the calling thread with its current locks.
-            std::vector<EpochLSPair> read_write_events_new = {
-                EpochLSPair { Epoch { thread->id, thread->vector_clock.find(thread->id) }, thread->lockset }
-            };
 
             // { (j#k, L) | (j#k, L) e RW(x) AND k > Th(i)[i] }
             // Find everything in RW(x) where thread_2's epoch value is higher than the vector clock of thread_id is set at thread_2.
-            for(EpochLSPair rw_pair : resource->read_write_events) {
-                if(rw_pair.epoch.value > thread->vector_clock.find(rw_pair.epoch.thread_id)) {
-                    read_write_events_new.push_back(rw_pair);
+            for(auto rw_pair_iter = resource->read_write_events.begin(); rw_pair_iter != resource->read_write_events.end();) {
+                if(rw_pair_iter->epoch.value <= thread->vector_clock.find(rw_pair_iter->epoch.thread_id) && !(!is_write && rw_pair_iter->is_write)) {
+                    rw_pair_iter = resource->read_write_events.erase(rw_pair_iter);
+                } else {
+                    ++rw_pair_iter;
                 }
             }
 
-            resource->read_write_events = read_write_events_new;
+            resource->read_write_events.push_back(EpochLSPair { Epoch { thread->id, thread->vector_clock.find(thread->id) }, thread->lockset, is_write });
         }
 
-        bool check_locksets_overlap(std::vector<ResourceName> ls1, std::vector<ResourceName> ls2) {
-            for(ResourceName rn_t1 : ls1) {
-                for(ResourceName rn_t2 : ls2) {
+        bool check_locksets_overlap(std::vector<ResourceName> *ls1, std::vector<ResourceName> *ls2) {
+            for(ResourceName rn_t1 : *ls1) {
+                for(ResourceName rn_t2 : *ls2) {
                     if(rn_t1 == rn_t2) {
                         return true;
                     }
@@ -255,14 +170,14 @@ class PWRDetectorOptimized : public Detector {
             return false;
         }
 
-        void add_races(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name, std::vector<EpochLSPair> rw_pairs, VectorClock vc, std::vector<ResourceName> ls) {
+        void add_races(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name, std::vector<EpochLSPair> *rw_pairs, VectorClock *vc, std::vector<ResourceName> *ls) {
             // Race check
             // Go through each currently stored read_write_event,
             // check if any lockset doesn't overlap with current one and
             // the other epoch is larger than thread_id's currently stored one for the other thread.
-            for(EpochLSPair rw_pair : rw_pairs) {
-                if(rw_pair.epoch.value > vc.find(rw_pair.epoch.thread_id)) {
-                    if(!check_locksets_overlap(ls, rw_pair.lockset)) {
+            for(auto &rw_pair : *rw_pairs) {
+                if(rw_pair.epoch.value > vc->find(rw_pair.epoch.thread_id)) {
+                    if(rw_pair.is_write && !check_locksets_overlap(ls, &rw_pair.lockset)) {
                         report_potential_race(resource_name, trace_position, thread_id, rw_pair.epoch.thread_id);
                     }
                 }
@@ -285,38 +200,36 @@ class PWRDetectorOptimized : public Detector {
                 // THERE IS A DISCREPANCY IN THE PAPER VS DISSERTATION HERE!
                 // L_w and Th are swapped but then they wouldn't find the WR-Race
                 if(resource->last_write_vc.find(resource->last_write_thread) > thread->vector_clock.find(resource->last_write_thread) &&
-                   !check_locksets_overlap(resource->last_write_ls, thread->lockset)) {
+                   !check_locksets_overlap(&resource->last_write_ls, &thread->lockset)) {
                     add_races(
                         thread_id,
                         trace_position,
                         resource_name,
-                        resource->read_write_events,
-                        thread->vector_clock,
-                        thread->lockset
+                        &resource->read_write_events,
+                        &thread->vector_clock,
+                        &thread->lockset
                     );
                 }
 
                 // Th(i) = Th(i) |_| L_w(x)
                 // "Compare values per thread, set to max ==> merge operation"
-                thread->vector_clock = thread->vector_clock.merge(resource->last_write_vc);
+                thread->vector_clock.merge_into(&resource->last_write_vc);
             }
+
+            pwr_history_sync(thread, resource);
 
             add_races(
                 thread_id,
                 trace_position,
                 resource_name,
-                resource->read_write_events,
-                thread->vector_clock,
-                thread->lockset
+                &resource->read_write_events,
+                &thread->vector_clock,
+                &thread->lockset
             );
 
-            pwr_history_sync(thread, resource);
-
-            update_read_write_events(thread, resource);
+            update_read_write_events(thread, resource, false);
 
             thread->vector_clock.increment(thread->id);
-
-            debug_print("read", thread_id, resource_name);
         }
 
         void write_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
@@ -329,12 +242,12 @@ class PWRDetectorOptimized : public Detector {
                 thread_id,
                 trace_position,
                 resource_name,
-                resource->read_write_events,
-                thread->vector_clock,
-                thread->lockset
+                &resource->read_write_events,
+                &thread->vector_clock,
+                &thread->lockset
             );
 
-            update_read_write_events(thread, resource);
+            update_read_write_events(thread, resource, true);
 
             resource->last_write_vc = thread->vector_clock;
             resource->last_write_thread = thread_id;
@@ -342,8 +255,6 @@ class PWRDetectorOptimized : public Detector {
             resource->last_write_occured = true;
 
             thread->vector_clock.increment(thread->id);
-
-            debug_print("write", thread_id, resource_name);
         }
 
         void acquire_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
@@ -361,8 +272,6 @@ class PWRDetectorOptimized : public Detector {
             resource->last_acquire = Epoch { thread_id, thread->vector_clock.find(thread_id) };
             
             thread->vector_clock.increment(thread->id);
-
-            debug_print("acquire", thread_id, resource_name);
         }
 
         void release_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
@@ -378,18 +287,31 @@ class PWRDetectorOptimized : public Detector {
             }
 
             // Add to history
-            add_to_history(
-                thread,
-                resource_name,
-                EpochVCPair{
-                    resource->last_acquire,
-                    thread->vector_clock
+            // Adds EpochVCPair to thread's history and global history.
+            // Limits history size per mutex to THREAD_HISTORY_SIZE (see at top of file).
+            EpochVCPair epoch_vc_pair = EpochVCPair{
+                resource->last_acquire,
+                thread->vector_clock
+            };
+            for(auto thread_iter = threads.begin(); thread_iter != threads.end(); ++thread_iter) {
+                if(thread_iter->first == thread->id) {
+                    continue;
                 }
-            );
+
+                auto current_history = &thread_iter->second.history.emplace(std::piecewise_construct, std::forward_as_tuple(resource_name), std::forward_as_tuple()).first->second;
+                if(current_history->size() >= THREAD_HISTORY_SIZE) {
+                    current_history->pop_back();
+                }
+                current_history->push_front(epoch_vc_pair);
+            }
+
+            auto current_global_history = &global_history.emplace(std::piecewise_construct, std::forward_as_tuple(resource_name), std::forward_as_tuple()).first->second;
+            if(current_global_history->size() >= THREAD_HISTORY_SIZE) {
+                current_global_history->pop_back();
+            }
+            current_global_history->push_front(epoch_vc_pair);
 
             thread->vector_clock.increment(thread->id);
-
-            debug_print("release", thread_id, resource_name);
         }
 
         void fork_event(ThreadID thread_id, TracePosition trace_position, ThreadID target_thread_id) {
@@ -397,6 +319,7 @@ class PWRDetectorOptimized : public Detector {
             Thread* target_thread = get_thread(target_thread_id);
 
             target_thread->vector_clock = thread->vector_clock;
+            target_thread->vector_clock.increment(target_thread_id);
 
             thread->vector_clock.increment(thread->id);
         }
@@ -405,11 +328,39 @@ class PWRDetectorOptimized : public Detector {
             Thread* thread = get_thread(thread_id);
             Thread* target_thread = get_thread(target_thread_id);
 
-            target_thread->vector_clock = thread->vector_clock.merge(target_thread->vector_clock);
+            thread->vector_clock.merge_into(&target_thread->vector_clock);
 
             thread->vector_clock.increment(thread->id);
         }
 
-        void get_races() {
+        void notify_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
+            Thread* thread = get_thread(thread_id);
+            
+            auto notifies_iter = notifies.find(resource_name);
+            if(notifies_iter == notifies.end()) {
+                notifies_iter = notifies.insert({ resource_name, VectorClock() }).first;
+            }
+
+            notifies_iter->second.merge_into(&thread->vector_clock);
+            thread->vector_clock.merge_into(&notifies_iter->second);
+
+            thread->vector_clock.increment(thread_id);
         }
+
+        void wait_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
+            Thread* thread = get_thread(thread_id);
+            
+            auto notifies_iter = notifies.find(resource_name);
+            
+            if(notifies_iter == notifies.end()) {
+                return;
+            }
+
+            thread->vector_clock.merge_into(&notifies_iter->second);
+            thread->vector_clock.increment(thread_id);
+
+            notifies[resource_name] = thread->vector_clock;
+        }
+
+        void get_races() {}
 };
