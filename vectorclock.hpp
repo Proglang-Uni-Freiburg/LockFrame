@@ -18,6 +18,8 @@ class VectorClock {
         void merge_into(VectorClock* vector_clock);
         void set(ThreadID thread_id, VectorClockValue);
         void increment(ThreadID thread_id);
+        bool less_than(VectorClock* vector_clock);
+        bool less_than_or_equal(VectorClock* vector_clock);
 };
 
 #endif

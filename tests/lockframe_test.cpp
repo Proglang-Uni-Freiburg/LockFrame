@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 #include "../lockframe.hpp"
 #include "../pwrdetector.hpp"
+#include "../pwrundeaddetector.cpp"
 #include "../undead.hpp"
 #include <chrono>
 #include <iostream>
@@ -18,6 +19,13 @@ LockFrame* get_pwr_lockframe() {
     LockFrame* lockFrame = new LockFrame();
     PWRDetector* pwrDetector = new PWRDetector();
     lockFrame->set_detector(pwrDetector);
+    return lockFrame;
+}
+
+LockFrame* get_pwr_undead_lockframe() {
+    LockFrame* lockFrame = new LockFrame();
+    PWRUNDEADDetector* detector = new PWRUNDEADDetector();
+    lockFrame->set_detector(detector);
     return lockFrame;
 }
 
@@ -117,7 +125,7 @@ TEST(LockFramePWRTest, PaperExample_2_8) {
 }
 
 TEST(LockFrameUNDEADTest, Test1) {
-    LockFrame* lockFrame = get_undead_lockframe();
+    LockFrame* lockFrame = get_pwr_undead_lockframe();
 
     lockFrame->acquire_event(1, 1, 1);
     lockFrame->acquire_event(1, 2, 2);
@@ -127,6 +135,93 @@ TEST(LockFrameUNDEADTest, Test1) {
     lockFrame->acquire_event(2, 6, 1);
     lockFrame->release_event(2, 7, 1);
     lockFrame->release_event(2, 8, 2);
+
+    ASSERT_EQ(lockFrame->get_races().size(), 1);
+}
+
+TEST(LockFramePWRUNDEADTest, PwrUndeadExtensionExample1) {
+    LockFrame* lockFrame = get_pwr_undead_lockframe();
+
+    lockFrame->acquire_event(1, 1, 1);
+    lockFrame->acquire_event(1, 2, 2);
+    lockFrame->release_event(1, 3, 2);
+    lockFrame->release_event(1, 4, 1);
+    lockFrame->acquire_event(2, 5, 2);
+    lockFrame->acquire_event(2, 6, 1);
+    lockFrame->release_event(2, 7, 1);
+    lockFrame->release_event(2, 8, 2);
+
+    ASSERT_EQ(lockFrame->get_races().size(), 1);
+}
+
+TEST(LockFramePWRUNDEADTest, PwrUndeadExtensionExample2) {
+    LockFrame* lockFrame = get_pwr_undead_lockframe();
+
+    lockFrame->acquire_event(1, 1, 1);
+    lockFrame->fork_event(1, 2, 2);
+    lockFrame->acquire_event(1, 3, 2);
+    lockFrame->release_event(1, 4, 2);
+    lockFrame->release_event(1, 5, 1);
+    lockFrame->acquire_event(2, 6, 2);
+    lockFrame->acquire_event(2, 7, 1);
+    lockFrame->release_event(2, 8, 1);
+    lockFrame->release_event(2, 9, 2);
+
+    ASSERT_EQ(lockFrame->get_races().size(), 1);
+}
+
+TEST(LockFramePWRUNDEADTest, PwrUndeadExtensionExample3) {
+    LockFrame* lockFrame = get_pwr_undead_lockframe();
+
+    lockFrame->acquire_event(1, 1, 1);
+    lockFrame->acquire_event(1, 2, 2);
+    lockFrame->write_event(1, 3, 3);
+    lockFrame->release_event(1, 4, 2);
+    lockFrame->release_event(1, 5, 1);
+    lockFrame->acquire_event(2, 6, 2);
+    lockFrame->read_event(2, 7, 3);
+    lockFrame->acquire_event(2, 8, 1);
+    lockFrame->release_event(2, 9, 1);
+    lockFrame->release_event(2, 10, 2);
+
+    ASSERT_EQ(lockFrame->get_races().size(), 0);
+}
+
+TEST(LockFramePWRUNDEADTest, PwrUndeadExtensionExample4) {
+    LockFrame* lockFrame = get_pwr_undead_lockframe();
+
+    lockFrame->acquire_event(1, 1, 1);
+    lockFrame->fork_event(1, 2, 2);
+    lockFrame->acquire_event(1, 3, 2);
+    lockFrame->acquire_event(1, 4, 3);
+    lockFrame->release_event(1, 5, 3);
+    lockFrame->release_event(1, 6, 2);
+    lockFrame->release_event(1, 7, 1);
+    lockFrame->acquire_event(2, 8, 3);
+    lockFrame->acquire_event(2, 9, 1);
+    lockFrame->release_event(2, 10, 1);
+    lockFrame->release_event(2, 11, 3);
+
+    ASSERT_EQ(lockFrame->get_races().size(), 1);
+}
+
+TEST(LockFramePWRUNDEADTest, PwrUndeadExtensionExample5) {
+    LockFrame* lockFrame = get_pwr_undead_lockframe();
+
+    lockFrame->acquire_event(1, 1, 1);
+    lockFrame->write_event(1, 2, 4);
+    lockFrame->acquire_event(1, 3, 2);
+    lockFrame->acquire_event(1, 4, 3);
+    lockFrame->release_event(1, 5, 3);
+    lockFrame->release_event(1, 6, 2);
+    lockFrame->release_event(1, 7, 1);
+    lockFrame->acquire_event(2, 8, 2);
+    lockFrame->read_event(2, 9, 4);
+    lockFrame->acquire_event(2, 10, 3);
+    lockFrame->acquire_event(2, 11, 1);
+    lockFrame->release_event(2, 12, 1);
+    lockFrame->release_event(2, 13, 3);
+    lockFrame->release_event(2, 14, 2);
 
     ASSERT_EQ(lockFrame->get_races().size(), 1);
 }

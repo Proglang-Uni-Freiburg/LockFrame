@@ -18,48 +18,20 @@ class UNDEADDetector : public Detector {
             // Use map to find LockDependency faster.
             // We basically keep track of all unique locksets in D and then have a set that contains all resources that
             // were acquired when this lockset was in place.
-            std::map<std::set<ResourceName>, std::set<ResourceName>> dependencies;
+            std::map<std::set<ResourceName>, std::unordered_map<ResourceName, bool>> dependencies;
         };
 
         struct LockDependency {
             ThreadID id;
             ResourceName resource_name;
-            std::set<ResourceName> lockset;
-
-            bool operator==(const LockDependency& a) const {
-                return id == a.id && resource_name == a.resource_name && lockset == a.lockset;
-            }
-
-            bool operator<(const LockDependency& a) const {
-                if(id < a.id) {
-                    return true;
-                } else if(a.id != id) {
-                    return false;
-                }
-
-                if(resource_name < a.resource_name) {
-                    return true;
-                } else if(a.resource_name != resource_name) {
-                    return false;
-                }
-
-                if(lockset < a.lockset) {
-                    return true;
-                } else if(a.lockset != lockset) {
-                    return false;
-                }
-                
-                return false;
-            }
+            const std::set<ResourceName>* lockset;
         };
 
         std::unordered_map<ThreadID, Thread> threads = {};
 
-        bool isOrderedDependencyInChain(const std::vector<LockDependency>* dependencyChain);
-        bool check_locksets_overlap(std::set<ResourceName> ls1, std::set<ResourceName> ls2);
-        bool check_lockset_in_lockset(std::set<ResourceName> lockset_small, std::set<ResourceName> lockset_big);
-        bool dependencyChainLocksetsOverlapForAny(const std::vector<LockDependency>* dependencyChain);
-        bool dependencyChainLockInLocksetsCycle(const std::vector<LockDependency>* dependencyChain);
+        void dfs(std::vector<LockDependency>* chain_stack, int visiting_thread_id, std::unordered_map<ThreadID, bool>* is_traversed, std::set<ThreadID>* thread_ids);
+        bool isChain(std::vector<LockDependency>* chain_stack, LockDependency* dependency);
+        bool isCycleChain(std::vector<LockDependency>* chain_stack, LockDependency* dependency);
         void find_cycles();
     public:
         Thread* get_thread(ThreadID thread_id);

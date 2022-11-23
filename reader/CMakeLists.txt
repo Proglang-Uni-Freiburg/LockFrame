@@ -11,7 +11,11 @@ add_executable(
   ../vectorclock.cpp
   ../pwrdetector.cpp
   ../undead.cpp
+  ../undeadlt.cpp
   ../pwrundeaddetector.cpp
+  ../pwrundeaddetector_2.cpp
+  ../pwrundeaddetector_3.cpp
+  ../pwrundeadguarddetector.cpp
   ../debug/pwrdetector_optimized_4.cpp
   ../debug/pwr_paper.cpp
   ../debug/pwr_shared_ptr.cpp
@@ -19,9 +23,12 @@ add_executable(
   ../debug/pwr_remove_after_sync.cpp
   ../debug/pwr_remove_sync_equal.cpp
   ../debug/pwr_dont_add_reads.cpp
+  ../debug/pwr_no_hist_optimized.cpp
+  ../debug/pwr_for_undead.cpp
 )
 
 target_link_libraries(
   reader
 )
 
+add_compile_definitions(PWRUNDEADDETECTOR_VC_PER_DEP_LIMIT=${PWRUNDEADDETECTOR_VC_PER_DEP_LIMIT} COLLECT_STATISTICS=${COLLECT_STATISTICS})

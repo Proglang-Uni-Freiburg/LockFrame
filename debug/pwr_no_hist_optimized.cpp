@@ -5,11 +5,11 @@
 #include <memory>
 #include "../detector.hpp"
 #include "../vectorclock.hpp"
-#include "pwr_shared_ptr.hpp"
+#include "pwr_no_hist_optimized.hpp"
 
 #define THREAD_HISTORY_SIZE 5
 
-PWRSharedPointer::Resource* PWRSharedPointer::get_resource(ResourceName resource_name) {
+PWRNoHistOptimized::Resource* PWRNoHistOptimized::get_resource(ResourceName resource_name) {
     auto current_resource_ptr = resources.find(resource_name);
     if(current_resource_ptr == resources.end()) {
         /*return &resources.insert({
@@ -23,18 +23,18 @@ PWRSharedPointer::Resource* PWRSharedPointer::get_resource(ResourceName resource
 }
 
 // w3
-void PWRSharedPointer::pwr_history_sync(Thread* thread, Resource* resource) {
+void PWRNoHistOptimized::pwr_history_sync(Thread* thread, Resource* resource) {
     for(ResourceName lock : thread->lockset) {
         auto current_history_iter = thread->history.find(lock);
         if(current_history_iter == thread->history.end()) continue;
         auto current_history = &current_history_iter->second;
 
         for(auto epoch_vc_pair_iter = current_history->begin(); epoch_vc_pair_iter != current_history->end();) {
-            if(epoch_vc_pair_iter->get()->vector_clock.find(epoch_vc_pair_iter->get()->epoch.thread_id) < thread->vector_clock.find(epoch_vc_pair_iter->get()->epoch.thread_id)) {
+            if(epoch_vc_pair_iter->get()->rel_vc.find(epoch_vc_pair_iter->get()->epoch.thread_id) < thread->vector_clock.find(epoch_vc_pair_iter->get()->epoch.thread_id)) {
                 epoch_vc_pair_iter = current_history->erase(epoch_vc_pair_iter);
             } else {
                 if(epoch_vc_pair_iter->get()->epoch.value < thread->vector_clock.find(epoch_vc_pair_iter->get()->epoch.thread_id)) {
-                    thread->vector_clock.merge_into(&epoch_vc_pair_iter->get()->vector_clock);
+                    thread->vector_clock.merge_into(&epoch_vc_pair_iter->get()->rel_vc);
                 }
 
                 ++epoch_vc_pair_iter;
@@ -44,7 +44,7 @@ void PWRSharedPointer::pwr_history_sync(Thread* thread, Resource* resource) {
 }
 
 // RW = { (i#Th(i)[i], LS_t(i) } U { (j#k, L) | (j#k, L) e RW(x) AND k > Th(i)[i] }
-void PWRSharedPointer::update_read_write_events(Thread* thread, Resource* resource, bool is_write) {
+void PWRNoHistOptimized::update_read_write_events(Thread* thread, Resource* resource, bool is_write) {
     // (i#Th(i)[i], LS_t(i))
     // Current "timestamp" of the calling thread with its current locks.
 
@@ -61,7 +61,7 @@ void PWRSharedPointer::update_read_write_events(Thread* thread, Resource* resour
     resource->read_write_events.push_back(EpochLSPair { Epoch { thread->id, thread->vector_clock.find(thread->id) }, thread->lockset, is_write });
 }
 
-bool PWRSharedPointer::check_locksets_overlap(std::vector<ResourceName> *ls1, std::vector<ResourceName> *ls2) {
+bool PWRNoHistOptimized::check_locksets_overlap(std::vector<ResourceName> *ls1, std::vector<ResourceName> *ls2) {
     for(ResourceName rn_t1 : *ls1) {
         for(ResourceName rn_t2 : *ls2) {
             if(rn_t1 == rn_t2) {
@@ -73,7 +73,7 @@ bool PWRSharedPointer::check_locksets_overlap(std::vector<ResourceName> *ls1, st
     return false;
 }
 
-void PWRSharedPointer::add_races(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name, std::vector<EpochLSPair> *rw_pairs, VectorClock *vc, std::vector<ResourceName> *ls) {
+void PWRNoHistOptimized::add_races(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name, std::vector<EpochLSPair> *rw_pairs, VectorClock *vc, std::vector<ResourceName> *ls) {
     // Race check
     // Go through each currently stored read_write_event,
     // check if any lockset doesn't overlap with current one and
@@ -87,7 +87,7 @@ void PWRSharedPointer::add_races(ThreadID thread_id, TracePosition trace_positio
     }
 }
 
-void PWRSharedPointer::report_potential_race(ResourceName resource_name, TracePosition trace_position, ThreadID thread_id_1, ThreadID thread_id_2) {
+void PWRNoHistOptimized::report_potential_race(ResourceName resource_name, TracePosition trace_position, ThreadID thread_id_1, ThreadID thread_id_2) {
     if(this->lockframe != NULL) {
         this->lockframe->report_race(DataRace{ resource_name, trace_position, thread_id_1, thread_id_2 });
     }
@@ -97,7 +97,7 @@ void PWRSharedPointer::report_potential_race(ResourceName resource_name, TracePo
  * We have a thread-local history, but other threads need to "know" what happened before they are first encountered,
  * so we copy history from the other thread's
  */
-PWRSharedPointer::Thread* PWRSharedPointer::get_thread(ThreadID thread_id) {
+PWRNoHistOptimized::Thread* PWRNoHistOptimized::get_thread(ThreadID thread_id) {
     auto current_thread_ptr = threads.find(thread_id);
     if(current_thread_ptr == threads.end()) {
         std::unordered_map<ResourceName, std::deque<std::shared_ptr<EpochVCPair>>> new_history = {};
@@ -119,7 +119,7 @@ PWRSharedPointer::Thread* PWRSharedPointer::get_thread(ThreadID thread_id) {
     }
 }
 
-void PWRSharedPointer::read_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
+void PWRNoHistOptimized::read_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
     Thread* thread = get_thread(thread_id);
     Resource* resource = get_resource(resource_name);
 
@@ -160,7 +160,7 @@ void PWRSharedPointer::read_event(ThreadID thread_id, TracePosition trace_positi
     thread->vector_clock.increment(thread->id);
 }
 
-void PWRSharedPointer::write_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
+void PWRNoHistOptimized::write_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
     Thread* thread = get_thread(thread_id);
     Resource* resource = get_resource(resource_name);
 
@@ -185,7 +185,7 @@ void PWRSharedPointer::write_event(ThreadID thread_id, TracePosition trace_posit
     thread->vector_clock.increment(thread->id);
 }
 
-void PWRSharedPointer::acquire_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
+void PWRNoHistOptimized::acquire_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
     Thread* thread = get_thread(thread_id);
     Resource* resource = get_resource(resource_name);
 
@@ -198,11 +198,12 @@ void PWRSharedPointer::acquire_event(ThreadID thread_id, TracePosition trace_pos
 
     // Set acquire History
     resource->last_acquire = Epoch { thread_id, thread->vector_clock.find(thread_id) };
+    resource->last_acquire_vc = thread->vector_clock;
     
     thread->vector_clock.increment(thread->id);
 }
 
-void PWRSharedPointer::release_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
+void PWRNoHistOptimized::release_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
     Thread* thread = get_thread(thread_id);
     Resource* resource = get_resource(resource_name);
 
@@ -219,6 +220,7 @@ void PWRSharedPointer::release_event(ThreadID thread_id, TracePosition trace_pos
     // Limits history size per mutex to THREAD_HISTORY_SIZE (see at top of file).
     std::shared_ptr<EpochVCPair> shared_epoch_vc_pair = std::shared_ptr<EpochVCPair>(new EpochVCPair{
         resource->last_acquire,
+        resource->last_acquire_vc,
         thread->vector_clock
     });
     for(auto thread_iter = threads.begin(); thread_iter != threads.end(); ++thread_iter) {
@@ -242,7 +244,7 @@ void PWRSharedPointer::release_event(ThreadID thread_id, TracePosition trace_pos
     thread->vector_clock.increment(thread->id);
 }
 
-void PWRSharedPointer::fork_event(ThreadID thread_id, TracePosition trace_position, ThreadID target_thread_id) {
+void PWRNoHistOptimized::fork_event(ThreadID thread_id, TracePosition trace_position, ThreadID target_thread_id) {
     Thread* thread = get_thread(thread_id);
     Thread* target_thread = get_thread(target_thread_id);
 
@@ -252,7 +254,7 @@ void PWRSharedPointer::fork_event(ThreadID thread_id, TracePosition trace_positi
     thread->vector_clock.increment(thread->id);
 }
 
-void PWRSharedPointer::join_event(ThreadID thread_id, TracePosition trace_position, ThreadID target_thread_id) {
+void PWRNoHistOptimized::join_event(ThreadID thread_id, TracePosition trace_position, ThreadID target_thread_id) {
     Thread* thread = get_thread(thread_id);
     Thread* target_thread = get_thread(target_thread_id);
 
@@ -261,7 +263,7 @@ void PWRSharedPointer::join_event(ThreadID thread_id, TracePosition trace_positi
     thread->vector_clock.increment(thread->id);
 }
 
-void PWRSharedPointer::notify_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
+void PWRNoHistOptimized::notify_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
     Thread* thread = get_thread(thread_id);
     
     auto notifies_iter = notifies.find(resource_name);
@@ -275,7 +277,7 @@ void PWRSharedPointer::notify_event(ThreadID thread_id, TracePosition trace_posi
     thread->vector_clock.increment(thread_id);
 }
 
-void PWRSharedPointer::wait_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
+void PWRNoHistOptimized::wait_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
     Thread* thread = get_thread(thread_id);
     
     auto notifies_iter = notifies.find(resource_name);
@@ -290,4 +292,4 @@ void PWRSharedPointer::wait_event(ThreadID thread_id, TracePosition trace_positi
     notifies[resource_name] = thread->vector_clock;
 }
 
-void PWRSharedPointer::get_races() {}
+void PWRNoHistOptimized::get_races() {}

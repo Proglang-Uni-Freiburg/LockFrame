@@ -9,11 +9,13 @@
 #include "../lockframe.hpp"
 #include "../pwrdetector.hpp"
 #include "../undead.hpp"
+#include "../undeadlt.hpp"
 #include "../pwrundeaddetector.cpp"
+#include "../pwrundeadguarddetector.cpp"
 #include "../detector.hpp"
 #include "../debug/pwrdetector_optimized_4.hpp"
 #include "../debug/pwr_paper.cpp"
-#include "../debug/pwr_shared_ptr.cpp"
+#include "../debug/pwr_shared_ptr.hpp"
 #include "../debug/pwr_no_syncs.cpp"
 #include "../debug/pwr_remove_after_sync.cpp"
 #include "../debug/pwr_remove_sync_equal.cpp"
@@ -24,6 +26,8 @@ std::unordered_map<std::string, Detector*> detectors = {
     {"PWROptimized4", new PWRDetectorOptimized4()},
     {"UNDEAD", new UNDEADDetector()},
     {"PWRUNDEAD", new PWRUNDEADDetector()},
+    {"PWRUNDEADGuard", new PWRUNDEADGuardDetector()},
+    {"UNDEADLT", new UNDEADLTDetector()},
     {"PWRPaper", new PWRPaper()},
     {"PWRSharedPointer", new PWRSharedPointer()},
     {"PWRNoSyncs", new PWRNoSyncs()},
@@ -42,8 +46,63 @@ LockFrame* create_lockframe_with_detector(std::string detector) {
     return lockFrame;
 }
 
+struct TraceLine {
+    int thread_id;
+    std::string event_type;
+    int target;
+};
+
 std::unordered_map<int, int> signal_list = {};
 
+int std_lock_id_counter = 1;
+std::unordered_map<std::string, int> std_lock_id_map = {};
+int std_thread_counter = 1;
+std::unordered_map<std::string, int> std_thread_map = {};
+std::unordered_map<std::string, std::string> std_event_map = {
+    {"r", "RD"}, {"w", "WR"}, {"fork", "SIG"}, {"join", "WT"}, {"acq", "LK"}, {"rel", "UK"}
+};
+
+TraceLine convert_result_from_std(std::array<std::string, 3>* current_result) {
+    TraceLine result = {};
+    
+    auto current_std_thread = std_thread_map.find(current_result->at(0));
+    if(current_std_thread == std_thread_map.end()) {
+        std_thread_map[current_result->at(0)] = std_thread_counter;
+        result.thread_id = std_thread_counter;
+        std_thread_counter += 1;
+    } else {
+        result.thread_id = current_std_thread->second;
+    }
+
+    auto event_len = current_result->at(1).find("(");
+    auto event_type = std_event_map.find(current_result->at(1).substr(0, event_len));
+    if(event_type != std_event_map.end()) {
+        result.event_type = event_type->second;
+        auto target = current_result->at(1).substr(event_len + 1, current_result->at(1).length() - event_len - 2);
+
+        if(result.event_type == "SIG" || result.event_type == "WT") {
+            auto current_std_target_thread = std_thread_map.find(target);
+            if(current_std_target_thread == std_thread_map.end()) {
+                std_thread_map[target] = std_thread_counter;
+                result.target = std_thread_counter;
+                std_thread_counter += 1;
+            } else {
+                result.target = current_std_target_thread->second;
+            }
+        } else {
+            auto current_std_lock_id = std_lock_id_map.find(target);
+            if(current_std_lock_id == std_lock_id_map.end()) {
+                std_lock_id_map[target] = std_lock_id_counter;
+                result.target = std_lock_id_counter;
+                std_lock_id_counter += 1;
+            } else {
+                result.target = current_std_lock_id->second;
+            }
+        }
+    }
+
+    return result;
+}
 
 int main(int argc, char *argv[]) {
     if((argc != 3 && (argc != 4 && std::string(argv[2]) != std::string("--speedygo"))) || !is_detector_supported(std::string(argv[1]))) {
@@ -52,6 +111,7 @@ int main(int argc, char *argv[]) {
     }
 
     bool speedygo_format = argc == 4 && std::string(argv[2]) == std::string("--speedygo");
+    bool std_format = argc == 4 && std::string(argv[2]) == std::string("--std");
 
     std::ifstream file(argv[argc - 1]);
     if(!file.good()) {
@@ -64,6 +124,7 @@ int main(int argc, char *argv[]) {
     
     std::string line;
     int line_index = 0;
+    const char separator = std_format ? '|' : ',';
     while(std::getline(file, line)) {
         line_index++;
         std::stringstream ss(line.c_str());
@@ -72,7 +133,7 @@ int main(int argc, char *argv[]) {
         int good_count = 0;
         while(ss.good() && good_count < 3) {
             std::string substring;
-            getline(ss, substring, ',');
+            getline(ss, substring, separator);
             result[good_count] = substring;
             good_count += 1;
         }
@@ -83,36 +144,41 @@ int main(int argc, char *argv[]) {
         }
 
         try {
-            int thread_id = std::stoi(result[0]);
+            TraceLine trace_line;
+            if(std_format) {
+                trace_line = convert_result_from_std(&result);
+            } else {
+                trace_line = { std::stoi(result[0]), result[1], std::stoi(result[2]) };
+            }
 
-            if(result[1] == "LK") {
-                lockFrame->acquire_event(thread_id, line_index, std::stoi(result[2]));
-            } else if(result[1] == "UK") {
-                lockFrame->release_event(thread_id, line_index, std::stoi(result[2]));
-            } else if(result[1] == "RD") {
-                lockFrame->read_event(thread_id, line_index, std::stoi(result[2]));
-            } else if(result[1] == "WR") {
-                lockFrame->write_event(thread_id, line_index, std::stoi(result[2]));
-            } else if(result[1] == "SIG") {
+            if(trace_line.event_type == "LK") {
+                lockFrame->acquire_event(trace_line.thread_id, line_index, trace_line.target);
+            } else if(trace_line.event_type == "UK") {
+                lockFrame->release_event(trace_line.thread_id, line_index, trace_line.target);
+            } else if(trace_line.event_type == "RD") {
+                lockFrame->read_event(trace_line.thread_id, line_index, trace_line.target);
+            } else if(trace_line.event_type == "WR") {
+                lockFrame->write_event(trace_line.thread_id, line_index, trace_line.target);
+            } else if(trace_line.event_type == "SIG") {
                 if(speedygo_format) {
-                    signal_list[std::stoi(result[2])] = std::stoi(result[0]);
+                    signal_list[trace_line.target] = trace_line.thread_id;
                 } else {
-                    lockFrame->fork_event(thread_id, line_index, std::stoi(result[2]));
+                    lockFrame->fork_event(trace_line.thread_id, line_index, trace_line.target);
                 }
-            } else if(result[1] == "WT") {
+            } else if(trace_line.event_type == "WT") {
                 if(speedygo_format) {
-                    auto thread_to_fork_from = signal_list.find(std::stoi(result[2]));
+                    auto thread_to_fork_from = signal_list.find(trace_line.target);
                     if(thread_to_fork_from != signal_list.end()) {
-                        lockFrame->fork_event(thread_to_fork_from->second, line_index, thread_id);
+                        lockFrame->fork_event(thread_to_fork_from->second, line_index, trace_line.thread_id);
                     }
                 } else {
-                    lockFrame->join_event(thread_id, line_index, std::stoi(result[2]));
+                    lockFrame->join_event(trace_line.thread_id, line_index, trace_line.target);
                 }
-            } else if(result[1] == "NT") {
-                lockFrame->notify_event(thread_id, line_index, std::stoi(result[2]));
-            } else if(result[1] == "NTWT") {
-                lockFrame->wait_event(thread_id, line_index, std::stoi(result[2]));
-            } else if(result[1] == "AWR" || result[1] == "ARD") {
+            } else if(trace_line.event_type == "NT") {
+                lockFrame->notify_event(trace_line.thread_id, line_index, trace_line.target);
+            } else if(trace_line.event_type == "NTWT") {
+                lockFrame->wait_event(trace_line.thread_id, line_index, trace_line.target);
+            } else if(trace_line.event_type == "AWR" || trace_line.event_type == "ARD") {
                 //std::cout << "Atomic not implemented " << line_index <<  ": " << line << std::endl;
             } else {
                 throw "bad file format";

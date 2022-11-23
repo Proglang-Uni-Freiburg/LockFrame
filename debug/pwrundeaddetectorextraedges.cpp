@@ -6,28 +6,21 @@
 #include <algorithm>
 #include <memory>
 #include <stack>
-#include <chrono>
 #include "detector.hpp"
 #include "vectorclock.hpp"
-#include "pwrdetector.hpp"
+#include "debug/pwr_no_hist_optimized.hpp"
 
 /**
- * Optimized PWR + Undead
+ * Optimized PWR + Undead + Idea 2 @ release
  */
-class PWRUNDEADDetector : public Detector {
+class PWRUNDEADDetectorExtraEdges : public Detector {
     private:
         #ifdef PWRUNDEADDETECTOR_VC_PER_DEP_LIMIT
             const size_t VECTOR_CLOCKS_PER_DEPENDENCY_LIMIT = PWRUNDEADDETECTOR_VC_PER_DEP_LIMIT;
         #else
             const size_t VECTOR_CLOCKS_PER_DEPENDENCY_LIMIT = 5;
         #endif
-
-        #ifdef COLLECT_STATISTICS
-            size_t undead_size_of_all_locksets_count = 0;
-            size_t pwrundead_size_of_all_locksets_count = 0;
-        #endif
-
-        PWRDetector* pwrDetector;
+        PWRNoHistOptimized* pwrDetector;
 
         struct LockDependency {
             ThreadID id;
@@ -64,10 +57,6 @@ class PWRUNDEADDetector : public Detector {
         }
 
         void insert_vectorclock_into_thread(Thread* thread, VectorClock* vc, std::set<ResourceName>* ls, ResourceName l) {
-            #ifdef COLLECT_STATISTICS
-                pwrundead_size_of_all_locksets_count += ls->size();
-            #endif
-
             auto ls_map = thread->vectorclocks_collected.find(*ls);
             if(ls_map == thread->vectorclocks_collected.end()) {
                 ls_map = thread->vectorclocks_collected.insert({*ls, {}}).first;
@@ -76,10 +65,6 @@ class PWRUNDEADDetector : public Detector {
             auto l_map = ls_map->second.find(l);
             if(l_map == ls_map->second.end()) {
                 l_map = ls_map->second.insert({l, {}}).first;
-
-                #ifdef COLLECT_STATISTICS
-                    undead_size_of_all_locksets_count += ls->size();
-                #endif
             }
 
             if(l_map->second.size() >= this->VECTOR_CLOCKS_PER_DEPENDENCY_LIMIT) {
@@ -179,8 +164,23 @@ class PWRUNDEADDetector : public Detector {
                 is_traversed[thread.first] = false;
             }
 
+            int counter_all = 0;
+            for(auto thread_id = thread_ids.cbegin(); thread_id != thread_ids.cend(); ++thread_id) {
+                Thread* thread = get_thread(*thread_id);
+                if(thread->vectorclocks_collected.empty()) continue;
+
+                for(auto &d: thread->vectorclocks_collected) {
+                    for(auto &l: d.second) {
+                        for(auto &vc: l.second) {
+                            counter_all += 1;
+                        }
+                    }
+                }
+            }
+
             int visiting;
             std::vector<LockDependency> chain_stack = {};
+            int index = 0;
             for(auto thread_id = thread_ids.cbegin(); thread_id != thread_ids.cend(); ++thread_id) {
                 Thread* thread = get_thread(*thread_id);
                 if(thread->vectorclocks_collected.empty()) continue;
@@ -189,12 +189,16 @@ class PWRUNDEADDetector : public Detector {
                 for(auto &d: thread->vectorclocks_collected) {
                     for(auto &l: d.second) {
                         for(auto &vc: l.second) {
+                            ++index;
+                            printf("%d / %d", index, counter_all);
                             is_traversed[*thread_id] = true;
                             chain_stack.push_back(LockDependency {
-                                *thread_id,
-                                l.first,
-                                &vc,
-                                &d.first
+                                LockDependency {
+                                    *thread_id,
+                                    l.first,
+                                    &vc,
+                                    &d.first
+                                }
                             });
                             dfs(&chain_stack, visiting, &is_traversed, &thread_ids);
                             chain_stack.pop_back();
@@ -205,22 +209,21 @@ class PWRUNDEADDetector : public Detector {
         }
 
     public:
-        PWRUNDEADDetector() {
-            this->pwrDetector = new PWRDetector();
+        PWRUNDEADDetector2() {
+            this->pwrDetector = new PWRNoHistOptimized();
         }
 
         void read_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
-            Thread* thread = get_thread(thread_id);
             this->pwrDetector->read_event(thread_id, trace_position, resource_name);
         }
 
         void write_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
-            Thread* thread = get_thread(thread_id);
             this->pwrDetector->write_event(thread_id, trace_position, resource_name);
         }
 
         void acquire_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
             Thread* thread = get_thread(thread_id);
+
             this->pwrDetector->acquire_event(thread_id, trace_position, resource_name);
 
             insert_vectorclock_into_thread(
@@ -233,88 +236,63 @@ class PWRUNDEADDetector : public Detector {
             thread->lockset.insert(resource_name);
         }
 
+        int counter = 0;
+
         void release_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
             Thread* thread = get_thread(thread_id);
 
+            auto acquire_vc = this->pwrDetector->get_resource(thread_id)->last_acquire_vc;
+            auto release_vc = this->pwrDetector->get_thread(thread_id)->vector_clock;
+
             this->pwrDetector->release_event(thread_id, trace_position, resource_name);
+
+            for(auto &[rn, pairs]: this->pwrDetector->get_thread(thread_id)->history) {
+                if(resource_name == rn) continue;
+
+                // Check if edge already exists
+                std::set<ResourceName> ls = {resource_name};
+                auto ls_iter = thread->vectorclocks_collected.find(ls);
+                if(ls_iter != thread->vectorclocks_collected.end()) {
+                    if(ls_iter->second.find(rn) != ls_iter->second.end()) {
+                        continue;
+                    }
+                }
+
+                for(auto &vc_pair: pairs) {
+                    if(vc_pair.get()->rel_vc.less_than(&release_vc) && !(vc_pair.get()->acq_vc.less_than(&acquire_vc))) {
+                        counter += 1;
+                        printf("ADD EXTRA EDGE %d -> %d -- %d\n", resource_name, rn, counter);
+                        insert_vectorclock_into_thread(
+                            thread,
+                            &this->pwrDetector->get_thread(thread_id)->vector_clock,
+                            &ls,
+                            rn
+                        );
+                        break;
+                    }
+                }
+            }
+
             thread->lockset.erase(resource_name);
         }
 
         void fork_event(ThreadID thread_id, TracePosition trace_position, ThreadID target_thread_id) {
-            Thread* thread = get_thread(thread_id);
-            Thread* target_thread = get_thread(target_thread_id);
             this->pwrDetector->fork_event(thread_id, trace_position, target_thread_id);
         }
 
         void join_event(ThreadID thread_id, TracePosition trace_position, ThreadID target_thread_id) {
-            Thread* thread = get_thread(thread_id);
-            Thread* target_thread = get_thread(target_thread_id);
             this->pwrDetector->join_event(thread_id, trace_position, target_thread_id);
         }
 
         void notify_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
-            Thread* thread = get_thread(thread_id);
             this->pwrDetector->notify_event(thread_id, trace_position, resource_name);
         }
 
         void wait_event(ThreadID thread_id, TracePosition trace_position, ResourceName resource_name) {
-            Thread* thread = get_thread(thread_id);
             this->pwrDetector->wait_event(thread_id, trace_position, resource_name);
         }
 
         void get_races() {
-            #ifdef COLLECT_STATISTICS
-                size_t undead_dependency_count = 0;
-                std::vector<size_t> undead_dependency_per_thread_count = {};
-                size_t pwrundead_dependency_count = 0;
-                std::vector<size_t> pwrundead_dependency_per_thread_count = {};
-
-                for(auto &[thread_id, thread]: threads) {
-                    size_t dep_counter = 0;
-                    size_t vc_dep_counter = 0;
-                    for(auto &d: thread.vectorclocks_collected) {
-                        for(auto &l: d.second) {
-                            dep_counter += 1;
-                            for(auto &vc: l.second) {
-                                vc_dep_counter += 1;
-                            }
-                        }
-                    }
-
-                    undead_dependency_count += dep_counter;
-                    undead_dependency_per_thread_count.push_back(dep_counter);
-                    pwrundead_dependency_count += vc_dep_counter;
-                    pwrundead_dependency_per_thread_count.push_back(vc_dep_counter);
-                }
-
-                printf("UNDEAD dependencies sum: %d\n", undead_dependency_count);
-                printf("UNDEAD dependencies per thread:");
-                for(auto &counter: undead_dependency_per_thread_count) {
-                    printf(" %d", counter);
-                }
-                printf("\n");
-
-                printf("PWRUNDEAD dependencies sum: %d\n", pwrundead_dependency_count);
-                printf("PWRUNDEAD dependencies per thread:");
-                for(auto &counter: pwrundead_dependency_per_thread_count) {
-                    printf(" %d", counter);
-                }
-                printf("\n");
-
-                printf("UNDEAD size of all locksets: %d\n", undead_size_of_all_locksets_count);
-                printf("PWRUNDEAD size of all locksets: %d\n", pwrundead_size_of_all_locksets_count);
-            #endif
-
-            #ifdef COLLECT_STATISTICS
-                auto start = std::chrono::steady_clock::now();
-            #endif
-
             find_cycles();
-
-            #ifdef COLLECT_STATISTICS
-                auto end = std::chrono::steady_clock::now();
-
-                printf("Phase 2 elapsed time in milliseconds: %d\n", std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
-            #endif
         }
 };

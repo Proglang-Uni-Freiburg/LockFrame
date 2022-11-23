@@ -1,0 +1,20 @@
+trace,vc_limit_exceeded_counter,vc_limit_exceeded_deps_counter,percentage of deps, percentage of deps extra
+boundedbuffer.std,25,1,2.94,2.94
+bubblesort.std,119,2,1.65,1.10
+bufwriter.std,1358,1,0.07,0.07
+clean.std,202,4,1.67,1.48
+derby.std,194699221,3053,10.83,0.00
+ftpserver.std,176239,981,17.84,0.53
+jigsaw.std,60531,477,8.78,0.74
+linkedlist.std,950,1,0.05,0.05
+luindex.std,215776,56,0.03,0.03
+lusearch.std,181621,314,0.19,0.17
+mergesort.std,33,1,1.82,1.79
+moldyn.std,21,2,6.45,6.45
+producerconsumer.std,148,3,6.52,1.40
+raytracer.std,42,2,3.33,3.33
+readerswriters.std,1709,1,0.06,0.06
+sor.std,633528,2,0.00,0.00
+sunflow.std,7139681,9,1.53,0.00
+tsp.std,8001960,3,3.30,0.00
+wronglock.std,75,1,5.00,0.62

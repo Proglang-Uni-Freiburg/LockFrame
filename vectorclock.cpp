@@ -68,3 +68,32 @@ void VectorClock::increment(ThreadID thread_id) {
         this->set(thread_id, old_value + 1);
     }
 }
+
+bool VectorClock::less_than(VectorClock* other_vector_clock) {
+    bool one_strictly_smaller = false;
+
+    for(const auto &[thread_id, value]: this->_vector_clock) {
+        auto other_vc_val = other_vector_clock->find(thread_id);
+
+        if(value > other_vc_val) {
+            return false;
+        }
+        if(value < other_vc_val) {
+            one_strictly_smaller = true;
+        }
+    }
+
+    return one_strictly_smaller;
+}
+
+bool VectorClock::less_than_or_equal(VectorClock* other_vector_clock) {
+    for(const auto &[thread_id, value]: this->_vector_clock) {
+        auto other_vc_val = other_vector_clock->find(thread_id);
+
+        if(value > other_vc_val) {
+            return false;
+        }
+    }
+
+    return true;
+}

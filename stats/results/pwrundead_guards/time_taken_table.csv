@@ -1,0 +1,12 @@
+trace,time_taken_pwrundead,time_taken_pwrundeadguard
+derby.std,1310,2527
+ftpserver.std,37,48
+jigsaw.std,1696,1923
+linkedlist.std,548,533
+lufact.std,82168,80415
+luindex.std,220900,222329
+lusearch.std,117669,115181
+moldyn.std,99,94
+sor.std,395845,406060
+sunflow.std,7265,7064
+tsp.std,165447,158617

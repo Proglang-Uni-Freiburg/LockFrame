@@ -1,0 +1,14 @@
+trace,time_taken_full (ms),time_taken_phase_1 (ms),time_taken_phase_2 (ms)
+bufwriter.std,14,14,0
+derby.std,20791,2336,18455
+ftpserver.std,735,52,683
+jigsaw.std,3126,1974,1152
+linkedlist.std,630,610,20
+lufact.std,85820,85820,0
+luindex.std,240266,240252,14
+lusearch.std,128529,128509,20
+moldyn.std,100,100,0
+raytracer.std,10,10,0
+sor.std,436581,436581,0
+sunflow.std,7538,7538,0
+tsp.std,180576,180576,0

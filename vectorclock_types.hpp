@@ -6,7 +6,7 @@
 typedef int VectorClockValue;
 typedef struct {
     ThreadID thread_id;
-    int value;
+    VectorClockValue value;
 } Epoch;
 
 #endif

@@ -1,0 +1,5 @@
+trace,possible_guard_lock_dependencies,possible_guard_locks,guard_locks_accepted,guard_locks_declined
+bubblesort.std,19,19,0,19
+derby.std,15317,17551,17280,271
+ftpserver.std,1230,2715,1440,1275
+jigsaw.std,3,7,0,7
