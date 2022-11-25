@@ -11,10 +11,7 @@ add_executable(
   ../vectorclock.cpp
   ../pwrdetector.cpp
   ../undead.cpp
-  ../undeadlt.cpp
   ../pwrundeaddetector.cpp
-  ../pwrundeaddetector_2.cpp
-  ../pwrundeaddetector_3.cpp
   ../pwrundeadguarddetector.cpp
   ../debug/pwrdetector_optimized_4.cpp
   ../debug/pwr_paper.cpp

@@ -51,7 +51,7 @@ def run_by_detector(detector, fullpath):
 def build_and_write_results(limit):
     build(limit)
     with open(os.path.join(RESULTS_PATH, 'results.csv'), 'a', buffering=1) as results_file:
-        results_file.write("trace,vc_limit,undead_deps_diff,pwrundead_deps_diff,undead_ls_size_diff,pwrundead_ls_size_diff\n")
+        results_file.write("trace,vc_limit,time_taken_undead,time_taken_pwrundead,time_taken_pwrundeadguard,pwrundead_deps,pwrundeadguard_deps,deps_diff,ls_size_diff,deps_with_additional_guards,additional_deps\n")
         for logfile in LOG_FILES:
             print("Running benchmark of " + logfile)
             fullpath = os.path.join(LOG_FILES_DIR, logfile)
@@ -60,35 +60,44 @@ def build_and_write_results(limit):
             results_file.write(str(limit) + ",")
 
             timeBefore = time.time_ns()
+            result_undead = run_by_detector("UNDEAD", fullpath)
+            timeTaken_undead = (time.time_ns() - timeBefore) // 1000 // 1000
+            check_return_code(result_undead)
+
+            timeBefore = time.time_ns()
             result_pwrundead = run_by_detector("PWRUNDEAD", fullpath)
+            timeTaken_pwrundead = (time.time_ns() - timeBefore) // 1000 // 1000
             check_return_code(result_pwrundead)
 
             timeBefore = time.time_ns()
             result_pwrundeadguard = run_by_detector("PWRUNDEADGuard", fullpath)
+            timeTaken_pwrundeadguard = (time.time_ns() - timeBefore) // 1000 // 1000
             check_return_code(result_pwrundeadguard)
 
             noguard_undead_deps = re.search(r"^UNDEAD dependencies sum: (\d+)$", result_pwrundead.stdout, flags=re.MULTILINE).group(1)
-            noguard_pwrundead_deps = re.search(r"^PWRUNDEAD dependencies sum: (\d+)$", result_pwrundead.stdout, flags=re.MULTILINE).group(1)
             noguard_undead_ls_size = re.search(r"^UNDEAD size of all locksets: (\d+)$", result_pwrundead.stdout, flags=re.MULTILINE).group(1)
-            noguard_pwrundead_ls_size = re.search(r"^PWRUNDEAD size of all locksets: (\d+)$", result_pwrundead.stdout, flags=re.MULTILINE).group(1)
 
             guard_undead_deps = re.search(r"^UNDEAD dependencies sum: (\d+)$", result_pwrundeadguard.stdout, flags=re.MULTILINE).group(1)
-            guard_pwrundead_deps = re.search(r"^PWRUNDEAD dependencies sum: (\d+)$", result_pwrundeadguard.stdout, flags=re.MULTILINE).group(1)
             guard_undead_ls_size = re.search(r"^UNDEAD size of all locksets: (\d+)$", result_pwrundeadguard.stdout, flags=re.MULTILINE).group(1)
-            guard_pwrundead_ls_size = re.search(r"^PWRUNDEAD size of all locksets: (\d+)$", result_pwrundeadguard.stdout, flags=re.MULTILINE).group(1)
+
+            deps_with_additional_guards = re.search(r"^UNDEAD dependencies with additional guards: (\d+)$", result_pwrundeadguard.stdout, flags=re.MULTILINE).group(1)
+            additional_deps = re.search(r"^UNDEAD guard only dependencies: (\d+)$", result_pwrundeadguard.stdout, flags=re.MULTILINE).group(1)
 
             undead_deps_diff = int(guard_undead_deps) - int(noguard_undead_deps)
-            pwrundead_deps_diff = int(guard_pwrundead_deps) - int(noguard_pwrundead_deps)
             undead_ls_size_diff = int(guard_undead_ls_size) - int(noguard_undead_ls_size)
-            pwrundead_ls_size_diff = int(guard_pwrundead_ls_size) - int(noguard_pwrundead_ls_size)
 
+            results_file.write(str(timeTaken_undead) + ",")
+            results_file.write(str(timeTaken_pwrundead) + ",")
+            results_file.write(str(timeTaken_pwrundeadguard) + ",")
+            results_file.write(str(noguard_undead_deps) + ",")
+            results_file.write(str(guard_undead_deps) + ",")
             results_file.write(str(undead_deps_diff) + ",")
-            results_file.write(str(pwrundead_deps_diff) + ",")
             results_file.write(str(undead_ls_size_diff) + ",")
-            results_file.write(str(pwrundead_ls_size_diff) + "\n")
+            results_file.write(str(deps_with_additional_guards) + ",")
+            results_file.write(str(additional_deps) + "\n")
         
 
 pathlib.Path(RESULTS_PATH).mkdir(parents=True, exist_ok=True)
 #open(os.path.join(RESULTS_PATH, 'results.csv'), 'w').close()
 
-#build_and_write_results(5)
+build_and_write_results(5)

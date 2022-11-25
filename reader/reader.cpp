@@ -9,7 +9,6 @@
 #include "../lockframe.hpp"
 #include "../pwrdetector.hpp"
 #include "../undead.hpp"
-#include "../undeadlt.hpp"
 #include "../pwrundeaddetector.cpp"
 #include "../pwrundeadguarddetector.cpp"
 #include "../detector.hpp"
@@ -27,7 +26,6 @@ std::unordered_map<std::string, Detector*> detectors = {
     {"UNDEAD", new UNDEADDetector()},
     {"PWRUNDEAD", new PWRUNDEADDetector()},
     {"PWRUNDEADGuard", new PWRUNDEADGuardDetector()},
-    {"UNDEADLT", new UNDEADLTDetector()},
     {"PWRPaper", new PWRPaper()},
     {"PWRSharedPointer", new PWRSharedPointer()},
     {"PWRNoSyncs", new PWRNoSyncs()},

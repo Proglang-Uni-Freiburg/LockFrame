@@ -30,6 +30,12 @@ class PWRUNDEADGuardDetector : public Detector {
 
             size_t undead_size_of_all_locksets_count = 0;
             size_t pwrundead_size_of_all_locksets_count = 0;
+
+            size_t dependencies_with_additional_guards = 0;
+            size_t dependencies_with_additional_guards_multiple = 0;
+            size_t additional_dependencies = 0;
+            size_t additional_dependencies_multiple = 0;
+            size_t pwr_undead_deps_without_limit = 0;
         #endif
 
         struct LockDependency {
@@ -45,6 +51,11 @@ class PWRUNDEADGuardDetector : public Detector {
             VectorClock vector_clock;
             std::set<ResourceName> lockset;
             std::set<ResourceName> possible_guard_locks;
+
+            #ifdef COLLECT_STATISTICS
+                bool has_normal_lock;
+                bool has_guard_lock;
+            #endif
         };
 
         struct EpochVCPair {
@@ -143,10 +154,12 @@ class PWRUNDEADGuardDetector : public Detector {
             }
         }
 
-        void insert_vectorclock_into_thread(Thread* thread, VectorClock* vc, std::set<ResourceName>* ls, ResourceName l) {
+        bool insert_vectorclock_into_thread(Thread* thread, VectorClock* vc, std::set<ResourceName>* ls, ResourceName l) {
             #ifdef COLLECT_STATISTICS
                 pwrundead_size_of_all_locksets_count += ls->size();
             #endif
+
+            bool is_newly_inserted = false;
 
             auto ls_map = thread->vectorclocks_collected.find(*ls);
             if(ls_map == thread->vectorclocks_collected.end()) {
@@ -156,6 +169,7 @@ class PWRUNDEADGuardDetector : public Detector {
             auto l_map = ls_map->second.find(l);
             if(l_map == ls_map->second.end()) {
                 l_map = ls_map->second.insert({l, {}}).first;
+                is_newly_inserted = true;
 
                 #ifdef COLLECT_STATISTICS
                     undead_size_of_all_locksets_count += ls->size();
@@ -166,6 +180,12 @@ class PWRUNDEADGuardDetector : public Detector {
                 l_map->second.pop_front();
             }
             l_map->second.push_back(*vc);
+
+            #ifdef COLLECT_STATISTICS
+                pwr_undead_deps_without_limit += 1;
+            #endif
+
+            return is_newly_inserted;
         }
 
         bool isCycleChain(std::vector<LockDependency>* chain_stack, LockDependency* dependency) {
@@ -424,17 +444,28 @@ class PWRUNDEADGuardDetector : public Detector {
                     resource_name
                 );
             } else {
-                this->possible_lock_dependencies.push_back(PossibleLockDependency {
-                    thread_id,
-                    resource_name,
-                    thread->vector_clock,
-                    thread->lockset,
-                    possible_guard_locks
-                });
-
                 #ifdef COLLECT_STATISTICS
+                    this->possible_lock_dependencies.push_back(PossibleLockDependency {
+                        thread_id,
+                        resource_name,
+                        thread->vector_clock,
+                        thread->lockset,
+                        possible_guard_locks,
+                        thread->lockset.size() != 0,
+                        false
+                    });
+
+
                     possible_guard_lock_dependencies_counter += 1;
                     possible_guard_locks_counter += possible_guard_locks.size();
+                #else
+                    this->possible_lock_dependencies.push_back(PossibleLockDependency {
+                        thread_id,
+                        resource_name,
+                        thread->vector_clock,
+                        thread->lockset,
+                        possible_guard_locks
+                    });
                 #endif
             }
 
@@ -463,6 +494,7 @@ class PWRUNDEADGuardDetector : public Detector {
 
                     #ifdef COLLECT_STATISTICS
                         guard_lock_accepted_counter += 1;
+                        possible_lock_dependency->has_guard_lock = true;
                     #endif
                 } else {
                     #ifdef COLLECT_STATISTICS
@@ -473,12 +505,29 @@ class PWRUNDEADGuardDetector : public Detector {
                 possible_lock_dependency->possible_guard_locks.erase(guard_lock);
 
                 if(possible_lock_dependency->possible_guard_locks.size() == 0) {
-                    insert_vectorclock_into_thread(
+                    bool is_newly_inserted = insert_vectorclock_into_thread(
                         get_thread(possible_lock_dependency->thread_id),
                         &possible_lock_dependency->vector_clock,
                         &possible_lock_dependency->lockset,
                         possible_lock_dependency->lock
                     );
+
+                    #ifdef COLLECT_STATISTICS
+                        if(possible_lock_dependency->has_normal_lock && possible_lock_dependency->has_guard_lock) {
+                            dependencies_with_additional_guards_multiple += 1;
+
+                            if(is_newly_inserted) {
+                                dependencies_with_additional_guards += 1;
+                            }
+                        }
+                        if(!possible_lock_dependency->has_normal_lock && possible_lock_dependency->has_guard_lock) {
+                            additional_dependencies_multiple += 1;
+
+                            if(is_newly_inserted) {
+                                additional_dependencies += 1;
+                            }
+                        }
+                    #endif
 
                     possible_lock_dependency = this->possible_lock_dependencies.erase(possible_lock_dependency);
                 } else {
@@ -590,12 +639,27 @@ class PWRUNDEADGuardDetector : public Detector {
                     #endif
                 }
 
-                insert_vectorclock_into_thread(
+                bool is_newly_inserted = insert_vectorclock_into_thread(
                     get_thread(possible_lock_dependency.thread_id),
                     &possible_lock_dependency.vector_clock,
                     &possible_lock_dependency.lockset,
                     possible_lock_dependency.lock
                 );
+
+                #ifdef COLLECT_STATISTICS
+                    if(possible_lock_dependency.has_normal_lock && possible_lock_dependency.possible_guard_locks.size() > 0) {
+                        if(is_newly_inserted) {
+                            dependencies_with_additional_guards += 1;
+                        }
+                        dependencies_with_additional_guards_multiple += 1;
+                    }
+                    if(!possible_lock_dependency.has_normal_lock && possible_lock_dependency.has_guard_lock) {
+                        if(is_newly_inserted) {
+                            additional_dependencies += 1;
+                        }
+                        additional_dependencies_multiple += 1;
+                    }
+                #endif
             }
 
             this->possible_lock_dependencies = {};
@@ -638,6 +702,8 @@ class PWRUNDEADGuardDetector : public Detector {
                 }
                 printf("\n");
 
+                printf("PWRUNDEAD dependencies no limit sum: %d\n", pwr_undead_deps_without_limit);
+
                 printf("Possible guard lock dependencies: %d\n", possible_guard_lock_dependencies_counter);
                 printf("Possible guard locks: %d\n", possible_guard_locks_counter);
                 printf("Guard locks accepted: %d\n", guard_lock_accepted_counter);
@@ -645,6 +711,11 @@ class PWRUNDEADGuardDetector : public Detector {
 
                 printf("UNDEAD size of all locksets: %d\n", undead_size_of_all_locksets_count);
                 printf("PWRUNDEAD size of all locksets: %d\n", pwrundead_size_of_all_locksets_count);
+
+                printf("UNDEAD dependencies with additional guards: %d\n", dependencies_with_additional_guards);
+                printf("PWRUNDEAD dependencies with additional guards: %d\n", dependencies_with_additional_guards_multiple);
+                printf("UNDEAD guard only dependencies: %d\n", additional_dependencies);
+                printf("PWRUNDEAD guard only dependencies: %d\n", additional_dependencies_multiple);
             #endif
 
             #ifdef COLLECT_STATISTICS
