@@ -1,7 +1,11 @@
 tests/build
 .vscode
+.idea
 reader/CMakeFiles
 reader/CMakeCache.txt
 reader/Makefile
 reader/reader
 reader/cmake_install.cmake
+*/cmake-build-debug
+*/cmake-build-release
+venv

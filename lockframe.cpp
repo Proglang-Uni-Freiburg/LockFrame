@@ -1,4 +1,5 @@
 #include <vector>
+#include <sstream>
 #include "lockframe.hpp"
 
 void LockFrame::set_detector(Detector* d) {
@@ -47,3 +48,30 @@ std::vector<DataRace> LockFrame::get_races() {
     detector->get_races();
     return races;
 }
+
+#ifdef COLLECT_STATISTICS
+
+std::string stringifyStatVector(const std::vector<unsigned long> &v)
+{
+    std::stringstream stream;
+    for (auto &counter : v)
+    {
+        stream << &counter << " ";
+    }
+    return stream.str();
+}
+
+// statistics take several overloads, but always break down into string representation
+void LockFrame::report_statistic(StatisticReport statistic) {
+    statistics.push_back(statistic);
+}
+void LockFrame::report_statistic(std::string key, std::string value){
+    statistics.push_back(StatisticReport {key, value});
+}
+void LockFrame::report_statistic(std::string key, std::vector<size_t> value) {
+    statistics.push_back(StatisticReport {key, stringifyStatVector(value)});
+}
+void LockFrame::report_statistic(std::string key, size_t value) {
+    statistics.push_back(StatisticReport {key, std::to_string(value)});
+}
+#endif

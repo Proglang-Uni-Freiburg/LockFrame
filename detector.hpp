@@ -16,6 +16,10 @@ class Detector {
         virtual void notify_event(ThreadID, TracePosition, ResourceName) {}
         virtual void wait_event(ThreadID, TracePosition, ResourceName) {}
         virtual void get_races() {}
+
+        //#ifdef COLLECT_STATISTICS
+        virtual void get_statistics() {}
+        //#endif
 };
 
 #endif
