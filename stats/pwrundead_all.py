@@ -5,24 +5,33 @@ import time
 import pandas
 import re
 import matplotlib.pyplot as plt
+import sys
 from cycler import cycler
 import numpy as np
 
+if len(sys.argv) < 2:
+    print("Please supply a path to the directory containing your traces. Exiting.")
+    sys.exit(1)
+
+LOG_FILES_DIR = pathlib.Path(sys.argv[1])
+if not LOG_FILES_DIR.is_dir():
+    print("The supplied path is not a directory. Exiting.")
+    sys.exit(1)
+
+LOG_FILES = []
+for file in os.listdir(LOG_FILES_DIR):
+    if file.endswith(".std"):
+        LOG_FILES.append(file)
+
+if len(LOG_FILES) == 0:
+    print("No trace files could be found in the supplied path - the check runs on filenames ending with .std. Exiting.")
+    sys.exit(1)
+
+print("Ready for full trace analysis. Targets:", LOG_FILES_DIR, LOG_FILES)
+
+
 RESULTS_PATH = pathlib.Path(__file__).parent.joinpath('results').joinpath(pathlib.Path(__file__).stem).resolve()
 READER_PATH = pathlib.Path(__file__).parent.parent.joinpath('reader').resolve()
-LOG_FILES_DIR = '/home/jan/Dev/traces/decapo'
-LOG_FILES = [
-    'account.std', 'airlinetickets.std', 'array.std', 'boundedbuffer.std',
-    'bubblesort.std', 'bufwriter.std', 'clean.std', 'critical.std', 
-    'derby.std', 'ftpserver.std', 'jigsaw.std', 'lang.std',
-    'linkedlist.std', 'lufact.std', 'luindex.std', 'lusearch.std',
-    'mergesort.std', 'moldyn.std', 'pingpong.std', 'producerconsumer.std',
-    'raytracer.std', 'readerswriters.std', 'sor.std', 'sunflow.std',
-    'tsp.std', 'twostage.std', 'wronglock.std'
-]
-
-#LOG_FILES_DIR = '/home/jan/Dev/traces/speedygo'
-#LOG_FILES = ['avroraNT.log', 'batikNT.log', 'cryptNT.log', 'h2NT.log', 'jythonNT.log', 'lufactNT.log', 'lusearchNT.log', 'pmdNT.log', 'sunflowNTABORTED.log', 'tomcatFull.log', 'xalanFull.log']
 LOG_FILES_SPEEDYGO_FORMAT = 0
 LOG_FILES_STD_FORMAT = 1
 
@@ -325,9 +334,8 @@ def read_results():
         
 
 pathlib.Path(RESULTS_PATH).mkdir(parents=True, exist_ok=True)
-#open(os.path.join(RESULTS_PATH, 'results.csv'), 'w').close()
-
-#build_and_write_results(5)
+open(os.path.join(RESULTS_PATH, 'results.csv'), 'w').close()
+build_and_write_results(5)
 
 results = read_results()
 create_graphs_from_results(results)
