@@ -34,6 +34,6 @@ else()
     add_compile_definitions(PWRUNDEADDETECTOR_VC_PER_DEP_LIMIT=5)
 endif()
 
-if(DEFINED ${COLLECT_STATISTICS})
-    add_compile_definitions(COLLECT_STATISTICS=${COLLECT_STATISTICS})
+if(DEFINED COLLECT_STATISTICS)
+    add_compile_definitions(COLLECT_STATISTICS=COLLECT_STATISTICS)
 endif()
