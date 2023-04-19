@@ -193,15 +193,7 @@ int main(int argc, char *argv[])
                 if (outputToFile)
                     break; // Ignore subsequent output flags!
                 outputToFile = true;
-                if (strncmp("/", argv[i + 1], 1 == 0) || strncmp(".", argv[i + 1], 1) == 0)
-                {
-                    // both absolute and relative paths should be handleable by the path object.
-                    baseOutputPath = argv[i + 1];
-                }
-                else
-                { // assume a relative path was meant, and append it to the existing base path.
-                    baseOutputPath /= std::string(argv[i + 1]);
-                }
+                baseOutputPath = std::filesystem::path(argv[i+1]);
                 i++; // since we assume the follow up value to be the actual output, we skip an iteration
                 break;
             case 5: // disables the results getting printed to the console.
@@ -411,7 +403,7 @@ int main(int argc, char *argv[])
         {
 
             std::stringstream fileName;
-            fileName << detectorName << "_" << tracePath.filename() << "_";
+            fileName << "/" << detectorName << "_" << tracePath.filename() << "_";
             auto t = std::time(nullptr);
             auto tm = *std::localtime(&t);
             fileName << std::put_time(&tm, "%d-%m-%Y_%H-%M-%S");
@@ -452,7 +444,7 @@ int main(int argc, char *argv[])
         if (outputToFile)
         {
             std::stringstream fileName;
-            fileName << detectorName << "_STATS_" << tracePath.filename() << "_";
+            fileName << "/" << detectorName << "_STATS_" << tracePath.filename() << "_";
             auto t = std::time(nullptr);
             auto tm = *std::localtime(&t);
             fileName << std::put_time(&tm, "%d-%m-%Y_%H-%M-%S");
