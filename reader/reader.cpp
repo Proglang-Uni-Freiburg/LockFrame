@@ -25,32 +25,29 @@
 #include "../lib/json.hpp"
 
 std::unordered_map<std::string, Detector *> detectors = {
-    {"PWR", new PWRDetector()},
-    {"PWROptimized4", new PWRDetectorOptimized4()},
-    {"UNDEAD", new UNDEADDetector()},
-    {"PWRUNDEAD", new PWRUNDEADDetector()},
-    {"PWRUNDEADGuard", new PWRUNDEADGuardDetector()},
-    {"PWRPaper", new PWRPaper()},
-    {"PWRSharedPointer", new PWRSharedPointer()},
-    {"PWRNoSyncs", new PWRNoSyncs()},
-    {"PWRRemoveAfterSync", new PWRRemoveAfterSync()},
-    {"PWRRemoveSyncEqual", new PWRRemoveSyncEqual()},
-    {"PWRDontAddReads", new PWRDontAddReads()}};
+        {"PWR",                new PWRDetector()},
+        {"PWROptimized4",      new PWRDetectorOptimized4()},
+        {"UNDEAD",             new UNDEADDetector()},
+        {"PWRUNDEAD",          new PWRUNDEADDetector()},
+        {"PWRUNDEADGuard",     new PWRUNDEADGuardDetector()},
+        {"PWRPaper",           new PWRPaper()},
+        {"PWRSharedPointer",   new PWRSharedPointer()},
+        {"PWRNoSyncs",         new PWRNoSyncs()},
+        {"PWRRemoveAfterSync", new PWRRemoveAfterSync()},
+        {"PWRRemoveSyncEqual", new PWRRemoveSyncEqual()},
+        {"PWRDontAddReads",    new PWRDontAddReads()}};
 
-bool is_detector_supported(std::string detector)
-{
+bool is_detector_supported(std::string detector) {
     return detectors.find(detector) != detectors.end();
 }
 
-LockFrame *create_lockframe_with_detector(std::string detector)
-{
+LockFrame *create_lockframe_with_detector(std::string detector) {
     LockFrame *lockFrame = new LockFrame();
     lockFrame->set_detector(detectors.find(detector)->second);
     return lockFrame;
 }
 
-struct TraceLine
-{
+struct TraceLine {
     int thread_id;
     std::string event_type;
     int target;
@@ -63,56 +60,47 @@ std::unordered_map<std::string, int> std_lock_id_map = {};
 int std_thread_counter = 1;
 std::unordered_map<std::string, int> std_thread_map = {};
 std::unordered_map<std::string, std::string> std_event_map = {
-    {"r", "RD"}, {"w", "WR"}, {"fork", "SIG"}, {"join", "WT"}, {"acq", "LK"}, {"rel", "UK"}};
+        {"r",    "RD"},
+        {"w",    "WR"},
+        {"fork", "SIG"},
+        {"join", "WT"},
+        {"acq",  "LK"},
+        {"rel",  "UK"}};
 
-TraceLine convert_result_from_std(std::array<std::string, 3> *current_result)
-{
+TraceLine convert_result_from_std(std::array<std::string, 3> *current_result) {
     TraceLine result = {};
 
     auto current_std_thread = std_thread_map.find(current_result->at(0));
-    if (current_std_thread == std_thread_map.end())
-    {
+    if (current_std_thread == std_thread_map.end()) {
         std_thread_map[current_result->at(0)] = std_thread_counter;
         result.thread_id = std_thread_counter;
         std_thread_counter += 1;
-    }
-    else
-    {
+    } else {
         result.thread_id = current_std_thread->second;
     }
 
     auto event_len = current_result->at(1).find("(");
     auto event_type = std_event_map.find(current_result->at(1).substr(0, event_len));
-    if (event_type != std_event_map.end())
-    {
+    if (event_type != std_event_map.end()) {
         result.event_type = event_type->second;
         auto target = current_result->at(1).substr(event_len + 1, current_result->at(1).length() - event_len - 2);
 
-        if (result.event_type == "SIG" || result.event_type == "WT")
-        {
+        if (result.event_type == "SIG" || result.event_type == "WT") {
             auto current_std_target_thread = std_thread_map.find(target);
-            if (current_std_target_thread == std_thread_map.end())
-            {
+            if (current_std_target_thread == std_thread_map.end()) {
                 std_thread_map[target] = std_thread_counter;
                 result.target = std_thread_counter;
                 std_thread_counter += 1;
-            }
-            else
-            {
+            } else {
                 result.target = current_std_target_thread->second;
             }
-        }
-        else
-        {
+        } else {
             auto current_std_lock_id = std_lock_id_map.find(target);
-            if (current_std_lock_id == std_lock_id_map.end())
-            {
+            if (current_std_lock_id == std_lock_id_map.end()) {
                 std_lock_id_map[target] = std_lock_id_counter;
                 result.target = std_lock_id_counter;
                 std_lock_id_counter += 1;
-            }
-            else
-            {
+            } else {
                 result.target = current_std_lock_id->second;
             }
         }
@@ -121,37 +109,34 @@ TraceLine convert_result_from_std(std::array<std::string, 3> *current_result)
     return result;
 }
 
-std::string stringifyStringVector(const std::vector<std::string> &v)
-{
+std::string stringifyStringVector(const std::vector<std::string> &v) {
     std::stringstream stream;
-    for (auto string : v)
-    {
+    for (auto string: v) {
         stream << string << " ";
     }
     return stream.str();
 }
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
 
     const std::string usageString = "Usage: ./reader [PWR|UNDEAD|PWRUNDEAD] [--speedygo] /path/to/file\n";
 
-    if ((argc < 2))
-    {
+    if ((argc < 2)) {
         std::cout << "Not enough arguments specified." << usageString;
         return 1;
     }
 
     // Unfortunately necessary as switch statements cannot be done easily over strings/char arrays.
     std::map<std::string, int> validCLIFlags = {
-        {"--speedygo", 0},
-        {"--std", 1},
-        {"-v", 2},
-        {"--verbose", 2},
-        {"--csv", 3},
-        {"-o", 4},
-        {"--output", 4},
-        {"--no-console", 5},
+            {"--speedygo",   0},
+            {"--std",        1},
+            {"-v",           2},
+            {"--verbose",    2},
+            {"--csv",        3},
+            {"-o",           4},
+            {"--output",     4},
+            {"--no-console", 5},
+            {"--timestamp",  6},
     };
 
     std::vector<std::string> enabledDetectors = {};
@@ -161,101 +146,92 @@ int main(int argc, char *argv[])
     bool verboseMode = false;
     bool hideResultsFromStdout = false;
     bool csvOutput = false;
+    bool addTimestampToOutput = false;
     std::filesystem::path baseOutputPath("./");
 
     // attempt to extract detectors and flags from command line arguments. The last element should always be the file to be analzyed.
-    for (int i = 1; i < argc - 1; i++)
-    {
-        if (strlen(argv[i]) >= 2 && strncmp("-", argv[i], 1) == 0)
-        {
+    for (int i = 1; i < argc - 1; i++) {
+        if (strlen(argv[i]) >= 2 && strncmp("-", argv[i], 1) == 0) {
             // leading dashes suggest a flag
             auto foundFlag = validCLIFlags.find(std::string(argv[i]));
-            if (foundFlag == validCLIFlags.end())
-            {
+            if (foundFlag == validCLIFlags.end()) {
                 throw "Invalid flag specified.";
             }
 
-            switch (foundFlag->second)
-            {
-            case 0: // --speedygo input of file is expected to be in SpeedyGo format
-                speedygo_format = true;
-                break;
-            case 1: // --std input of file is expected to be in STD format
-                std_format = true;
-                break;
-            case 2: // -v / --verbose adds additional messages to the console like progress reports.
-                verboseMode = true;
-                break;
-            case 3: // --csv changes the output format to a comma-seperated variant.
-                csvOutput = true;
-                break;
-            case 4: // -o / --output Enables writing the results to files in the specified directory.
-                if (outputToFile)
-                    break; // Ignore subsequent output flags!
-                outputToFile = true;
-                baseOutputPath = std::filesystem::path(argv[i+1]);
-                i++; // since we assume the follow up value to be the actual output, we skip an iteration
-                break;
-            case 5: // disables the results getting printed to the console.
-                hideResultsFromStdout = true;
-                break;
+            switch (foundFlag->second) {
+                case 0: // --speedygo input of file is expected to be in SpeedyGo format
+                    speedygo_format = true;
+                    break;
+                case 1: // --std input of file is expected to be in STD format
+                    std_format = true;
+                    break;
+                case 2: // -v / --verbose adds additional messages to the console like progress reports.
+                    verboseMode = true;
+                    break;
+                case 3: // --csv changes the output format to a comma-seperated variant.
+                    csvOutput = true;
+                    break;
+                case 4: // -o / --output Enables writing the results to files in the specified directory.
+                    if (outputToFile)
+                        break; // Ignore subsequent output flags!
+                    outputToFile = true;
+                    baseOutputPath = std::filesystem::path(argv[i + 1]);
+                    i++; // since we assume the follow up value to be the actual output, we skip an iteration
+                    break;
+                case 5: // disables the results getting printed to the console.
+                    hideResultsFromStdout = true;
+                    break;
+                case 6:
+                    addTimestampToOutput = true;
+                    break;
+
             }
-        }
-        else if (is_detector_supported(std::string(argv[i])))
-        {
+        } else if (is_detector_supported(std::string(argv[i]))) {
             enabledDetectors.push_back(std::string(argv[i]));
-        }
-        else
-        {
+        } else {
             std::cout << "An invalid argument " << argv[i] << " was specified." << std::endl;
             exit(1);
         }
     }
 
     // If neither the console will show any results nor any output file was enabled, exit.
-    if (hideResultsFromStdout && !outputToFile)
-    {
-        std::cout << "All possible outputs were disabled. Hint: specify an output file with -o or remove --no-console. " << usageString;
+    if (hideResultsFromStdout && !outputToFile) {
+        std::cout << "All possible outputs were disabled. Hint: specify an output file with -o or remove --no-console. "
+                  << usageString;
         return 1;
     }
 
     // If an output emitting a file is enabled, check if the output directory is writable.
-    if (outputToFile)
-    {
-        if (!std::filesystem::is_directory(baseOutputPath))
-        {
+    if (outputToFile) {
+        if (!std::filesystem::is_directory(baseOutputPath)) {
             std::cout << "The given output path " << baseOutputPath << " is not a directory." << std::endl;
             return 1;
         }
 
         // yes, you need to do two conversions. and yes, this is cursed.
-        if (access(baseOutputPath.string().c_str(), W_OK) != 0)
-        {
+        if (access(baseOutputPath.string().c_str(), W_OK) != 0) {
             std::cout << "The given output path " << baseOutputPath << " cannot be written to." << std::endl;
             return 1;
         };
     }
 
     // If no detector was found, exit the program.
-    if (enabledDetectors.size() == 0)
-    {
+    if (enabledDetectors.empty()) {
         std::cout << "No valid detectors were specified. " << usageString;
         return 1;
     }
 
     std::filesystem::path tracePath(argv[argc - 1]);
 
-    std::cout << "Analyzing trace file " << tracePath.filename() << std::endl
+    std::cout << "Analyzing trace file " << tracePath.filename().string() << std::endl
               << "Enabled detectors: " << stringifyStringVector(enabledDetectors) << std::endl
               << "Verbose: " << verboseMode << " CSV: " << csvOutput << std::endl;
 
     // Main program loop. Iterate over each supplied detector.
-    for (auto &detectorName : enabledDetectors)
-    {
+    for (auto &detectorName: enabledDetectors) {
         // attempt to get a file stream from the provided *last* argument (argc - 1). If the file is not good (any error flags), exit program
         std::ifstream file(tracePath);
-        if (!file.good())
-        {
+        if (!file.good()) {
             std::cout << "The specified trace file " << tracePath << " cannot be found." << std::endl;
             return 1;
         }
@@ -271,8 +247,7 @@ int main(int argc, char *argv[])
         const char separator = std_format ? '|' : ',';
 
         // read out the passed file line for line
-        while (std::getline(file, line))
-        {
+        while (std::getline(file, line)) {
             line_index++;
             std::stringstream ss(line.c_str());
             std::array<std::string, 3> result{"", "", ""};
@@ -280,8 +255,7 @@ int main(int argc, char *argv[])
             // As long as the string is good, process the first three entries on the line. (There should always be three entries)
             // This sets the previously instantiated result at position i to the result at that position.
             int good_count = 0;
-            while (ss.good() && good_count < 3)
-            {
+            while (ss.good() && good_count < 3) {
                 std::string substring;
                 getline(ss, substring, separator);
                 result[good_count] = substring;
@@ -289,124 +263,93 @@ int main(int argc, char *argv[])
             }
 
             // If the last element in the results array is still blank, then the file must've been malformed. Exit.
-            if (result[2] == "")
-            {
+            if (result[2] == "") {
                 std::cout << "Bad file format on line " << line_index << ": " << line << std::endl;
                 return 1;
             }
 
             // Attempt to convert the split line into the internal representation.. Any thrown errors will exit the program.
-            try
-            {
+            try {
                 TraceLine trace_line;
-                if (std_format)
-                {
+                if (std_format) {
                     // If we have the std-format set, we convert it in-place.
                     trace_line = convert_result_from_std(&result);
-                }
-                else
-                {
+                } else {
                     // Otherwise, we construct a simple tuple that converts the string numbers to integers.
                     trace_line = {std::stoi(result[0]), result[1], std::stoi(result[2])};
                 }
 
                 // Pass the found events to the lockframe detector through function calls.
-                if (trace_line.event_type == "LK")
-                {
+                if (trace_line.event_type == "LK") {
                     lockFrame->acquire_event(trace_line.thread_id, line_index, trace_line.target);
-                }
-                else if (trace_line.event_type == "UK")
-                {
+                } else if (trace_line.event_type == "UK") {
                     lockFrame->release_event(trace_line.thread_id, line_index, trace_line.target);
-                }
-                else if (trace_line.event_type == "RD")
-                {
+                } else if (trace_line.event_type == "RD") {
                     lockFrame->read_event(trace_line.thread_id, line_index, trace_line.target);
-                }
-                else if (trace_line.event_type == "WR")
-                {
+                } else if (trace_line.event_type == "WR") {
                     lockFrame->write_event(trace_line.thread_id, line_index, trace_line.target);
-                }
-                else if (trace_line.event_type == "SIG")
-                {
-                    if (speedygo_format)
-                    {
+                } else if (trace_line.event_type == "SIG") {
+                    if (speedygo_format) {
                         signal_list[trace_line.target] = trace_line.thread_id;
-                    }
-                    else
-                    {
+                    } else {
                         lockFrame->fork_event(trace_line.thread_id, line_index, trace_line.target);
                     }
-                }
-                else if (trace_line.event_type == "WT")
-                {
-                    if (speedygo_format)
-                    {
+                } else if (trace_line.event_type == "WT") {
+                    if (speedygo_format) {
                         auto thread_to_fork_from = signal_list.find(trace_line.target);
-                        if (thread_to_fork_from != signal_list.end())
-                        {
+                        if (thread_to_fork_from != signal_list.end()) {
                             lockFrame->fork_event(thread_to_fork_from->second, line_index, trace_line.thread_id);
                         }
-                    }
-                    else
-                    {
+                    } else {
                         lockFrame->join_event(trace_line.thread_id, line_index, trace_line.target);
                     }
-                }
-                else if (trace_line.event_type == "NT")
-                {
+                } else if (trace_line.event_type == "NT") {
                     lockFrame->notify_event(trace_line.thread_id, line_index, trace_line.target);
-                }
-                else if (trace_line.event_type == "NTWT")
-                {
+                } else if (trace_line.event_type == "NTWT") {
                     lockFrame->wait_event(trace_line.thread_id, line_index, trace_line.target);
-                }
-                else if (trace_line.event_type == "AWR" || trace_line.event_type == "ARD")
-                {
+                } else if (trace_line.event_type == "AWR" || trace_line.event_type == "ARD") {
                     // TODO: implement Atomic events
                     // std::cout << "Atomic not implemented " << line_index <<  ": " << line << std::endl;
-                }
-                else
-                { // no valid event type found, assume bad file format.
+                } else { // no valid event type found, assume bad file format.
                     throw "bad file format";
                 }
             }
-            catch (...)
-            { // failing to parse should crash the whole thing.
+            catch (...) { // failing to parse should crash the whole thing.
                 std::cout << "Bad file format on line " << line_index << ": " << line << std::endl;
                 return 1;
             }
 
             // occasional reporting on progress - report to stdout every million lines
-            if (verboseMode && line_index % 1000000 == 0)
-            {
+            if (verboseMode && line_index % 1000000 == 0) {
                 std::cout << "Parsed line " << line_index << std::endl;
             }
         }
 
         // set the parse time finish.
         auto end_time = std::chrono::steady_clock::now();
-        std::cout << "File parsing for the detector " << detectorName << " has finished. Analysis commences now." << std::endl;
+        std::cout << "File parsing for the detector " << detectorName << " has finished. Analysis commences now."
+                  << std::endl;
 
         // Perform the actual race calculation on the lockFrame implementation / detector and store them in races
         std::vector<DataRace> races = lockFrame->get_races();
         std::cout << detectorName << " has concluded analysis." << std::endl;
 
         // hint message about output not getting dumped into console.
-        if (hideResultsFromStdout)
-        {
+        if (hideResultsFromStdout) {
             std::cout << "Results will only be written to the specified output directory." << std::endl;
         }
 
         std::ofstream raceOutput;
-        if (outputToFile)
-        {
+        if (outputToFile) {
 
             std::stringstream fileName;
-            fileName << "/" << detectorName << "_" << tracePath.filename() << "_";
-            auto t = std::time(nullptr);
-            auto tm = *std::localtime(&t);
-            fileName << std::put_time(&tm, "%d-%m-%Y_%H-%M-%S");
+            fileName << "/" << detectorName << "_" << tracePath.filename().string();
+            if (addTimestampToOutput) {
+                fileName << "_";
+                auto t = std::time(nullptr);
+                auto tm = *std::localtime(&t);
+                fileName << std::put_time(&tm, "%d-%m-%Y_%H-%M-%S");
+            }
             if (csvOutput)
                 fileName << ".csv";
             else
@@ -416,18 +359,16 @@ int main(int argc, char *argv[])
             raceOutput.open(racePath);
         }
         // Report all races as specified by the user
-        for (auto &race : races)
-        {
+        for (auto &race: races) {
             std::stringstream raceStream;
-            if (csvOutput)
-            {
+            if (csvOutput) {
                 // CSV-compatible output format. Reports as THREAD1, THREAD2, RESOURCENAME, TRACELINE
-                raceStream << race.thread_id_1 << "," << race.thread_id_2 << "," << race.resource_name << "," << race.trace_position << std::endl;
-            }
-            else
-            {
+                raceStream << race.thread_id_1 << "," << race.thread_id_2 << "," << race.resource_name << ","
+                           << race.trace_position << std::endl;
+            } else {
                 // original format established by Jan Metzger.
-                raceStream << "T" << race.thread_id_1 << " <--> T" << race.thread_id_2 << ", Resource: [" << race.resource_name << "], Line: " << race.trace_position << std::endl;
+                raceStream << "T" << race.thread_id_1 << " <--> T" << race.thread_id_2 << ", Resource: ["
+                           << race.resource_name << "], Line: " << race.trace_position << std::endl;
             }
             // Write results to outputs
             if (!hideResultsFromStdout)
@@ -444,10 +385,13 @@ int main(int argc, char *argv[])
         if (outputToFile)
         {
             std::stringstream fileName;
-            fileName << "/" << detectorName << "_STATS_" << tracePath.filename() << "_";
-            auto t = std::time(nullptr);
-            auto tm = *std::localtime(&t);
-            fileName << std::put_time(&tm, "%d-%m-%Y_%H-%M-%S");
+            fileName << "/" << detectorName << "_STATS_" << tracePath.filename().string();
+            if (addTimestampToOutput) {
+                fileName << "_";
+                auto t = std::time(nullptr);
+                auto tm = *std::localtime(&t);
+                fileName << std::put_time(&tm, "%d-%m-%Y_%H-%M-%S");
+            }
             if (csvOutput)
                 fileName << ".csv";
             else
@@ -476,50 +420,11 @@ int main(int argc, char *argv[])
         if (outputToFile)
             statOutput.close();
 
-#endif // statistics collection
+#endif // COLLECT_STATISTICS
 
-        /*
-        if (verboseMode)
-        {
-            // Report each race on stdout.
-            for (auto &race : races)
-            {
-                std::cout << "T" << race.thread_id_1 << " <--> T" << race.thread_id_2 << ", Resource: [" << race.resource_name << "], Line: " << race.trace_position << std::endl;
-            }
-
-            #ifdef COLLECT_STATISTICS
-            std::cout << "Collected detector statistics:" << std::endl;
-            for (auto &stat : lockFrame->statistics)
-            {
-                std::cout << stat.statistics_key << ": " << stat.statistics_value << std::endl;
-            }
-            #endif
-        }
-
-        if (csvOutput)
-        {
-            std::ofstream raceOutput;
-            raceOutput.open("./coolPath.csv");
-            raceOutput << "THREAD1,THREAD2,RESOURCE,POSITION" << std::endl;
-            for (auto &race : races)
-            {
-                raceOutput << race.thread_id_1 << "," << race.thread_id_2 << "," << race.resource_name << "," << race.trace_position << std::endl;
-            }
-            raceOutput.close();
-
-            #ifdef COLLECT_STATISTICS
-            std::ofstream statOutput;
-            statOutput.open("./coolStatPath.csv");
-            for (auto &stat : lockFrame->statistics)
-            {
-                statOutput << stat.statistics_key << "," << stat.statistics_value << std::endl;
-            }
-
-            #endif
-        }
-        */
-
-        std::cout << "Parsed " << line_index << " lines in " << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count() << "ms." << std::endl;
+        std::cout << "Parsed " << line_index << " lines in "
+                  << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count() << "ms."
+                  << std::endl;
         std::cout << "Found " << races.size() << " races." << std::endl;
     }
 
