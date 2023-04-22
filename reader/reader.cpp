@@ -1,7 +1,6 @@
 #include <iostream>
 #include <string>
 #include <fstream>
-#include <sstream>
 #include <vector>
 #include <chrono>
 #include <array>
@@ -14,7 +13,6 @@
 #include "../undead.hpp"
 #include "../pwrundeaddetector.cpp"
 #include "../pwrundeadguarddetector.cpp"
-#include "../detector.hpp"
 #include "../debug/pwrdetector_optimized_4.hpp"
 #include "../debug/pwr_paper.cpp"
 #include "../debug/pwr_shared_ptr.hpp"
@@ -37,20 +35,20 @@ std::unordered_map<std::string, Detector *> detectors = {
         {"PWRRemoveSyncEqual", new PWRRemoveSyncEqual()},
         {"PWRDontAddReads",    new PWRDontAddReads()}};
 
-bool is_detector_supported(std::string detector) {
+bool is_detector_supported(const std::string& detector) {
     return detectors.find(detector) != detectors.end();
 }
 
-LockFrame *create_lockframe_with_detector(std::string detector) {
-    LockFrame *lockFrame = new LockFrame();
+LockFrame *create_lockframe_with_detector(const std::string& detector) {
+    auto *lockFrame = new LockFrame();
     lockFrame->set_detector(detectors.find(detector)->second);
     return lockFrame;
 }
 
 struct TraceLine {
-    int thread_id;
+    int thread_id{};
     std::string event_type;
-    int target;
+    int target{};
 };
 
 std::unordered_map<int, int> signal_list = {};
@@ -79,7 +77,7 @@ TraceLine convert_result_from_std(std::array<std::string, 3> *current_result) {
         result.thread_id = current_std_thread->second;
     }
 
-    auto event_len = current_result->at(1).find("(");
+    auto event_len = current_result->at(1).find('(');
     auto event_type = std_event_map.find(current_result->at(1).substr(0, event_len));
     if (event_type != std_event_map.end()) {
         result.event_type = event_type->second;
@@ -111,7 +109,7 @@ TraceLine convert_result_from_std(std::array<std::string, 3> *current_result) {
 
 std::string stringifyStringVector(const std::vector<std::string> &v) {
     std::stringstream stream;
-    for (auto string: v) {
+    for (const auto& string: v) {
         stream << string << " ";
     }
     return stream.str();
@@ -155,7 +153,7 @@ int main(int argc, char *argv[]) {
             // leading dashes suggest a flag
             auto foundFlag = validCLIFlags.find(std::string(argv[i]));
             if (foundFlag == validCLIFlags.end()) {
-                throw "Invalid flag specified.";
+                throw std::invalid_argument("Invalid flag specified.");
             }
 
             switch (foundFlag->second) {
@@ -187,7 +185,7 @@ int main(int argc, char *argv[]) {
 
             }
         } else if (is_detector_supported(std::string(argv[i]))) {
-            enabledDetectors.push_back(std::string(argv[i]));
+            enabledDetectors.emplace_back(argv[i]);
         } else {
             std::cout << "An invalid argument " << argv[i] << " was specified." << std::endl;
             exit(1);
@@ -212,7 +210,7 @@ int main(int argc, char *argv[]) {
         if (access(baseOutputPath.string().c_str(), W_OK) != 0) {
             std::cout << "The given output path " << baseOutputPath << " cannot be written to." << std::endl;
             return 1;
-        };
+        }
     }
 
     // If no detector was found, exit the program.
@@ -249,7 +247,7 @@ int main(int argc, char *argv[]) {
         // read out the passed file line for line
         while (std::getline(file, line)) {
             line_index++;
-            std::stringstream ss(line.c_str());
+            std::stringstream ss(line);
             std::array<std::string, 3> result{"", "", ""};
 
             // As long as the string is good, process the first three entries on the line. (There should always be three entries)
@@ -263,7 +261,7 @@ int main(int argc, char *argv[]) {
             }
 
             // If the last element in the results array is still blank, then the file must've been malformed. Exit.
-            if (result[2] == "") {
+            if (result[2].empty()) {
                 std::cout << "Bad file format on line " << line_index << ": " << line << std::endl;
                 return 1;
             }
@@ -311,7 +309,7 @@ int main(int argc, char *argv[]) {
                     // TODO: implement Atomic events
                     // std::cout << "Atomic not implemented " << line_index <<  ": " << line << std::endl;
                 } else { // no valid event type found, assume bad file format.
-                    throw "bad file format";
+                    throw std::runtime_error(std::string("Trace file contains invalid event type: " + trace_line.event_type));
                 }
             }
             catch (...) { // failing to parse should crash the whole thing.
