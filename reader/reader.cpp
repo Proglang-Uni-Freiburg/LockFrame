@@ -341,7 +341,6 @@ int main(int argc, char *argv[]) {
 
         std::ofstream raceOutput;
         if (outputToFile) {
-
             std::stringstream fileName;
             fileName << "/" << detectorName << "_" << tracePath.filename().string();
             if (addTimestampToOutput) {
@@ -382,8 +381,7 @@ int main(int argc, char *argv[]) {
 #ifdef COLLECT_STATISTICS
         // Report statistics, if defined during compile time.
         std::ofstream statOutput;
-        if (outputToFile)
-        {
+        if (outputToFile) {
             std::stringstream fileName;
             fileName << "/" << detectorName << "_STATS_" << tracePath.filename().string();
             if (addTimestampToOutput) {
@@ -398,24 +396,24 @@ int main(int argc, char *argv[]) {
                 fileName << ".txt";
 
             std::filesystem::path statPath(baseOutputPath.string() + fileName.str());
-            raceOutput.open(statPath);
+            statOutput.open(statPath);
         }
-        for (auto &stat : lockFrame->statistics)
-        {
+        for (auto &stat: lockFrame->statistics) {
             std::stringstream statStream;
-            if (csvOutput)
-            {
+            if (csvOutput) {
                 statStream << stat.statistics_key << "," << stat.statistics_value << std::endl;
-            }
-            else
-            {
+            } else {
                 statStream << stat.statistics_key << ": " << stat.statistics_value << std::endl;
             }
 
-            if (!hideResultsFromStdout)
+            if (!hideResultsFromStdout) {
                 std::cout << statStream.str();
-            if (outputToFile)
+            }
+
+            if (outputToFile) {
                 statOutput << statStream.str();
+            }
+
         }
         if (outputToFile)
             statOutput.close();

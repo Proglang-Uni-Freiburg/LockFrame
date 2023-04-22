@@ -2,7 +2,7 @@
 #include <sstream>
 #include "lockframe.hpp"
 
-void LockFrame::set_detector(Detector* d) {
+void LockFrame::set_detector(Detector *d) {
     d->lockframe = this;
     detector = d;
 }
@@ -51,12 +51,10 @@ std::vector<DataRace> LockFrame::get_races() {
 
 #ifdef COLLECT_STATISTICS
 
-std::string stringifyStatVector(const std::vector<unsigned long> &v)
-{
+std::string stringifyStatVector(const std::vector<unsigned long> &v) {
     std::stringstream stream;
-    for (auto &counter : v)
-    {
-        stream << &counter << " ";
+    for (auto &counter: v) {
+        stream << counter << " ";
     }
     return stream.str();
 }
@@ -65,13 +63,17 @@ std::string stringifyStatVector(const std::vector<unsigned long> &v)
 void LockFrame::report_statistic(StatisticReport statistic) {
     statistics.push_back(statistic);
 }
-void LockFrame::report_statistic(std::string key, std::string value){
-    statistics.push_back(StatisticReport {key, value});
+
+void LockFrame::report_statistic(std::string key, std::string value) {
+    statistics.push_back(StatisticReport{key, value});
 }
+
 void LockFrame::report_statistic(std::string key, std::vector<size_t> value) {
-    statistics.push_back(StatisticReport {key, stringifyStatVector(value)});
+    statistics.push_back(StatisticReport{key, stringifyStatVector(value)});
 }
+
 void LockFrame::report_statistic(std::string key, size_t value) {
-    statistics.push_back(StatisticReport {key, std::to_string(value)});
+    statistics.push_back(StatisticReport{key, std::to_string(value)});
 }
+
 #endif

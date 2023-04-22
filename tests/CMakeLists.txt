@@ -15,6 +15,8 @@ FetchContent_MakeAvailable(googletest)
 
 enable_testing()
 
+add_compile_definitions(COLLECT_STATISTICS=1)
+
 add_executable(
   lockframe_test
   lockframe_test.cpp
@@ -23,7 +25,7 @@ add_executable(
   ../pwrdetector.cpp
   ../pwrundeaddetector.cpp
   ../undead.cpp
-)
+        ../reader/reader.cpp)
 target_link_libraries(
   lockframe_test
   gtest_main
