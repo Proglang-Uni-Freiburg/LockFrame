@@ -6,7 +6,7 @@ Detectors can easily be swapped inside the code in order to run them against eac
 
 We also provide a trace file reader in the "reader" folder to run bigger traces from file.
 
-**A complete german documentation can be found in the repository wiki.**
+**A complete german documentation can be found [in the repository wiki.](https://github.com/Proglang-Uni-Freiburg/LockFrame/wiki/04-Tools-&-Benutzung)**
 
 ## Usage
 
