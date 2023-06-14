@@ -152,7 +152,7 @@ int main(int argc, char *argv[]) {
 
     // attempt to extract detectors and flags from command line arguments.
     // The first element not detected as a flag will be the file to analyze.
-    for (int i = 1; i < argc - 1; i++) {
+    for (int i = 1; i < argc; i++) {
         if (strlen(argv[i]) >= 2 && strncmp("-", argv[i], 1) == 0) {
             // leading dashes suggest a flag
             auto foundFlag = validCLIFlags.find(std::string(argv[i]));
