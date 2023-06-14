@@ -35,11 +35,11 @@ std::unordered_map<std::string, Detector *> detectors = {
         {"PWRRemoveSyncEqual", new PWRRemoveSyncEqual()},
         {"PWRDontAddReads",    new PWRDontAddReads()}};
 
-bool is_detector_supported(const std::string& detector) {
+bool is_detector_supported(const std::string &detector) {
     return detectors.find(detector) != detectors.end();
 }
 
-LockFrame *create_lockframe_with_detector(const std::string& detector) {
+LockFrame *create_lockframe_with_detector(const std::string &detector) {
     auto *lockFrame = new LockFrame();
     lockFrame->set_detector(detectors.find(detector)->second);
     return lockFrame;
@@ -109,7 +109,7 @@ TraceLine convert_result_from_std(std::array<std::string, 3> *current_result) {
 
 std::string stringifyStringVector(const std::vector<std::string> &v) {
     std::stringstream stream;
-    for (const auto& string: v) {
+    for (const auto &string: v) {
         stream << string << " ";
     }
     return stream.str();
@@ -117,7 +117,7 @@ std::string stringifyStringVector(const std::vector<std::string> &v) {
 
 int main(int argc, char *argv[]) {
 
-    const std::string usageString = "Usage: ./reader [PWR|UNDEAD|PWRUNDEAD] [--speedygo] /path/to/file\n";
+    const std::string usageString = "Usage: ./reader -d [PWR|UNDEAD|PWRUNDEAD] [--speedygo] /path/to/file\n";
 
     if ((argc < 2)) {
         std::cout << "Not enough arguments specified." << usageString;
@@ -135,6 +135,8 @@ int main(int argc, char *argv[]) {
             {"--output",     4},
             {"--no-console", 5},
             {"--timestamp",  6},
+            {"-d",           7},
+            {"--detector",   7},
     };
 
     std::vector<std::string> enabledDetectors = {};
@@ -146,8 +148,10 @@ int main(int argc, char *argv[]) {
     bool csvOutput = false;
     bool addTimestampToOutput = false;
     std::filesystem::path baseOutputPath("./");
+    std::filesystem::path tracePath;
 
-    // attempt to extract detectors and flags from command line arguments. The last element should always be the file to be analzyed.
+    // attempt to extract detectors and flags from command line arguments.
+    // The first element not detected as a flag will be the file to analyze.
     for (int i = 1; i < argc - 1; i++) {
         if (strlen(argv[i]) >= 2 && strncmp("-", argv[i], 1) == 0) {
             // leading dashes suggest a flag
@@ -182,13 +186,22 @@ int main(int argc, char *argv[]) {
                 case 6:
                     addTimestampToOutput = true;
                     break;
+                case 7: // Detector flag
+                    if (is_detector_supported(std::string(argv[i+1]))) {
+                        enabledDetectors.emplace_back(argv[i+1]);
+                    } else {
+                        std::cout << "An invalid detector " << argv[i] << " was specified." << std::endl;
+                        exit(1);
+                    }
+                    i++; // skip the next argument, assuming it was set as a detector.
+                    break;
 
             }
-        } else if (is_detector_supported(std::string(argv[i]))) {
-            enabledDetectors.emplace_back(argv[i]);
-        } else {
-            std::cout << "An invalid argument " << argv[i] << " was specified." << std::endl;
-            exit(1);
+        } else { // not a flag: assume trace file.
+            // only accept the first found undefined argument.
+            if (tracePath.empty()) {
+                tracePath = std::filesystem::path(argv[i]);
+            }
         }
     }
 
@@ -218,8 +231,12 @@ int main(int argc, char *argv[]) {
         std::cout << "No valid detectors were specified. " << usageString;
         return 1;
     }
+    if (tracePath.empty()) {
+        std::cout << "No trace file was specified. " << usageString;
+        return 1;
+    }
 
-    std::filesystem::path tracePath(argv[argc - 1]);
+    // std::filesystem::path tracePath(argv[argc - 1]);
 
     std::cout << "Analyzing trace file " << tracePath.filename().string() << std::endl
               << "Enabled detectors: " << stringifyStringVector(enabledDetectors) << std::endl
@@ -309,7 +326,8 @@ int main(int argc, char *argv[]) {
                     // TODO: implement Atomic events
                     // std::cout << "Atomic not implemented " << line_index <<  ": " << line << std::endl;
                 } else { // no valid event type found, assume bad file format.
-                    throw std::runtime_error(std::string("Trace file contains invalid event type: " + trace_line.event_type));
+                    throw std::runtime_error(
+                            std::string("Trace file contains invalid event type: " + trace_line.event_type));
                 }
             }
             catch (...) { // failing to parse should crash the whole thing.

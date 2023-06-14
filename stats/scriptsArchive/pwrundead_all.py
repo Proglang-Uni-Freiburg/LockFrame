@@ -29,44 +29,125 @@ if len(LOG_FILES) == 0:
 
 print("Ready for full trace analysis. Targets:", LOG_FILES_DIR, LOG_FILES)
 
-
 RESULTS_PATH = pathlib.Path(__file__).parent.joinpath('results').joinpath(pathlib.Path(__file__).stem).resolve()
 READER_PATH = pathlib.Path(__file__).parent.parent.joinpath('reader').resolve()
-LOG_FILES_SPEEDYGO_FORMAT = 0
-LOG_FILES_STD_FORMAT = 1
+READER_OUT_PATH = READER_PATH.parent.joinpath('out').resolve()
+LOG_FILES_SPEEDYGO_FORMAT = False
+LOG_FILES_STD_FORMAT = True
+VC_PER_DEP_LIMIT = 5
+
 
 def check_return_code(result):
     if result.returncode != 0:
-        raise Exception(f'Error while running "{ " ".join(result.args) } "' )
+        raise Exception(f'Error while running "{" ".join(result.args)} "')
 
-def build(limit):
+
+def build():
     print("Building...")
-    result = subprocess.run(['cmake', '-DCMAKE_BUILD_TYPE=Release', '-DCOLLECT_STATISTICS=1', '-DPWRUNDEADDETECTOR_VC_PER_DEP_LIMIT=' + str(limit), '.'], stdout=subprocess.PIPE, cwd=READER_PATH)
+    result = subprocess.run(['cmake', '-DCMAKE_BUILD_TYPE=Release', '-DCOLLECT_STATISTICS=1',
+                             '-DPWRUNDEADDETECTOR_VC_PER_DEP_LIMIT=' + str(VC_PER_DEP_LIMIT), '.'],
+                            stdout=subprocess.PIPE, cwd=READER_PATH)
     check_return_code(result)
     result = subprocess.run(['cmake', '--build', '.'], stdout=subprocess.PIPE, cwd=READER_PATH)
     check_return_code(result)
     print("Build done\n---\n")
 
+
+# Performs analysis over all trace files using UNDEAD, PWRUNDEAD, and PWRUNDEAD3.
+# This will output all files to a "out" directory for further processing.
+def run_analysis():
+    # Because the reader program intentionally does not create the "out" directory, create it here if it does not exist.
+    if not os.path.exists(READER_OUT_PATH):
+        print(str(READER_OUT_PATH) + " does not exist, creating it.")
+        os.makedirs(READER_OUT_PATH)
+    # iterate over all defined trace files.
+    for logfile in LOG_FILES:
+        print("Running benchmark of " + str(logfile))
+        fullpath = os.path.join(LOG_FILES_DIR, logfile)
+        # Set the expected arguments and processors
+        args = ['./reader', '-o', READER_OUT_PATH, '--no-console', '-v', "UNDEAD", "PWRUNDEAD", "PWRUNDEAD3"]
+        # If set in the script, add the argument for the respective trace format
+        if LOG_FILES_SPEEDYGO_FORMAT:
+            args.append('--speedygo')
+        elif LOG_FILES_STD_FORMAT:
+            args.append('--std')
+        # finally, append the trace filename
+        args.append(fullpath)
+        # run the reader application itself.
+        process = subprocess.Popen(args, stdout=subprocess.PIPE, universal_newlines=True, text=True)
+        # Output any newly printed lines from the subprocess to the terminal.
+        for stdout_line in iter(process.stdout.readline, ""):
+            yield stdout_line
+        process.stdout.close()
+        # wait for the process to finish.
+        return_code = process.wait()
+        # If any error has occurred, raise an exception.
+        if return_code != 0:
+            raise subprocess.CalledProcessError(return_code, args)
+
+
+# Combines the emitted files from the reader into a singular .csv file for further processing.
+def combine_results():
+    with open(os.path.join(RESULTS_PATH, "results.csv"), "a", buffering=1) as combinedResults:
+        # Write header line
+        combinedResults.write("trace,vc_limit,races_undead,races_pwrundead,races_pwrundeadextra,"
+                              "time_taken_full_undead,time_taken_full_pwrundead,time_taken_full_pwrundeadextra,"
+                              "time_taken_phase2_undead,time_taken_phase2_pwrundead,time_taken_phase2_pwrundeadextra,"
+                              "undead_deps_thread,pwr_deps_thread,extra_deps_thread,vc_limit_exceeded,"
+                              "vc_limit_exceeded_dep_counter,locks,reads,writes,acquires,releases,forks,joins,"
+                              "notifies,waits\n")
+
+        # Iterate over each set trace/log file and attempt to grab the files with the matching detector names.
+        for traceName in LOG_FILES:
+            # write the trace name and the set vc_limit.
+            combinedResults.write(str(traceName) + "," + str(VC_PER_DEP_LIMIT) + ",")
+            # open the UNDEAD detector files
+            undead_results = open(READER_OUT_PATH.joinpath("PWR_" + str(traceName) + ".csv"), "r")
+            undead_stats = open(READER_OUT_PATH.joinpath("PWR_STATS_" + str(traceName) + ".csv"), "r")
+            # open the PWRUNDEAD detector files
+            pwrundead_results = open(READER_OUT_PATH.joinpath("PWRUNDEAD_" + str(traceName) + ".csv"), "r")
+            pwrundead_stats = open(READER_OUT_PATH.joinpath("PWRUNDEAD_STATS_" + str(traceName) + ".csv"), "r")
+            # open the PWRUNDEAD3 / PWRUNDEADEXTRA detector files
+            pwrundeadextra_results = open(READER_OUT_PATH.joinpath("PWRUNDEAD3_" + str(traceName) + ".csv"), "r")
+            pwrundeadextra_stats = open(READER_OUT_PATH.joinpath("PWRUNDEAD3_STATS_" + str(traceName) + ".csv"), "r")
+
+            # close all opened files
+            undead_results.close()
+            undead_stats.close()
+            pwrundead_results.close()
+            pwrundead_stats.close()
+            pwrundeadextra_results.close()
+            pwrundeadextra_stats.close()
+
+            # finally, once all files are processed, write a newline.
+            combinedResults.write("\n")
+
+
+# LEGACY CODE BEYOND THIS POINT UNTIL CONVERSION SCRIPTS
+# TODO: REMOVE ONCE UNNECESSARY
+
 def run_by_detector(detector, fullpath):
     print("Running detector: " + detector)
-    args = ['./reader', detector]
+    args = ["./reader", detector, "-o ./out", "--no-console", "-v", "--csv"]
     if LOG_FILES_SPEEDYGO_FORMAT:
-        args.append('--speedygo')
+        args.append("--speedygo")
     elif LOG_FILES_STD_FORMAT:
-        args.append('--std')
+        args.append("--std")
     args.append(fullpath)
     return subprocess.run(args, stdout=subprocess.PIPE, cwd=READER_PATH, text=True)
 
-def build_and_write_results(limit):
-    build(limit)
+
+def build_and_write_results():
+    build()
     with open(os.path.join(RESULTS_PATH, 'results.csv'), 'a', buffering=1) as results_file:
-        results_file.write("trace,vc_limit,races_undead,races_pwrundead,races_pwrundeadextra,time_taken_full_undead,time_taken_full_pwrundead,time_taken_full_pwrundeadextra,time_taken_phase2_undead,time_taken_phase2_pwrundead,time_taken_phase2_pwrundeadextra,undead_deps_thread,pwr_deps_thread,extra_deps_thread,vc_limit_exceeded,vc_limit_exceeded_dep_counter,locks,reads,writes,acquires,releases,forks,joins,notifies,waits\n")
+        results_file.write(
+            "trace,vc_limit,races_undead,races_pwrundead,races_pwrundeadextra,time_taken_full_undead,time_taken_full_pwrundead,time_taken_full_pwrundeadextra,time_taken_phase2_undead,time_taken_phase2_pwrundead,time_taken_phase2_pwrundeadextra,undead_deps_thread,pwr_deps_thread,extra_deps_thread,vc_limit_exceeded,vc_limit_exceeded_dep_counter,locks,reads,writes,acquires,releases,forks,joins,notifies,waits\n")
         for logfile in LOG_FILES:
             print("Running benchmark of " + logfile)
             fullpath = os.path.join(LOG_FILES_DIR, logfile)
 
             results_file.write(logfile + ",")
-            results_file.write(str(limit) + ",")
+            results_file.write(str(VC_PER_DEP_LIMIT) + ",")
 
             timeBefore = time.time_ns()
             result_undead = run_by_detector("UNDEAD", fullpath)
@@ -83,34 +164,60 @@ def build_and_write_results(limit):
             timeTaken_pwrundeadextra = (time.time_ns() - timeBefore) // 1000 // 1000
             check_return_code(result_pwrundeadextra)
 
-            results_file.write(re.search(r"^Found (\d+) races.$", result_undead.stdout, flags=re.MULTILINE).group(1) + ",")
-            results_file.write(re.search(r"^Found (\d+) races.$", result_pwrundead.stdout, flags=re.MULTILINE).group(1) + ",")
-            results_file.write(re.search(r"^Found (\d+) races.$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + ",")
+            results_file.write(
+                re.search(r"^Found (\d+) races.$", result_undead.stdout, flags=re.MULTILINE).group(1) + ",")
+            results_file.write(
+                re.search(r"^Found (\d+) races.$", result_pwrundead.stdout, flags=re.MULTILINE).group(1) + ",")
+            results_file.write(
+                re.search(r"^Found (\d+) races.$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + ",")
 
             results_file.write(str(timeTaken_undead) + ',')
             results_file.write(str(timeTaken_pwrundead) + ',')
             results_file.write(str(timeTaken_pwrundeadextra) + ',')
 
-            results_file.write(re.search(r"^Phase 2 elapsed time in milliseconds: (\d+)$", result_undead.stdout, flags=re.MULTILINE).group(1) + ",")
-            results_file.write(re.search(r"^Phase 2 elapsed time in milliseconds: (\d+)$", result_pwrundead.stdout, flags=re.MULTILINE).group(1) + ",")
-            results_file.write(re.search(r"^Phase 2 elapsed time in milliseconds: (\d+)$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + ",")
+            results_file.write(re.search(r"^Phase 2 elapsed time in milliseconds: (\d+)$", result_undead.stdout,
+                                         flags=re.MULTILINE).group(1) + ",")
+            results_file.write(re.search(r"^Phase 2 elapsed time in milliseconds: (\d+)$", result_pwrundead.stdout,
+                                         flags=re.MULTILINE).group(1) + ",")
+            results_file.write(re.search(r"^Phase 2 elapsed time in milliseconds: (\d+)$", result_pwrundeadextra.stdout,
+                                         flags=re.MULTILINE).group(1) + ",")
 
-            results_file.write(re.search(r"^UNDEAD dependencies per thread: ([(\d)| ]+)$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + ",")
-            results_file.write(re.search(r"^PWRUNDEAD dependencies per thread: ([(\d)| ]+)$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + ",")
-            results_file.write(re.search(r"^EXTRAEDGES dependencies per thread: ([(\d)| ]+)$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + ",")
-            results_file.write(re.search(r"^VC limit exceeded: (\d+)$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + ",")
-            results_file.write(re.search(r"^VC limit exceeded by dependency: (\d+)$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + ",")
-            results_file.write(re.search(r"^locks: (\d+)$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + ",")
-            results_file.write(re.search(r"^reads: (\d+)$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + ",")
-            results_file.write(re.search(r"^writes: (\d+)$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + ",")
-            results_file.write(re.search(r"^acquires: (\d+)$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + ",")
-            results_file.write(re.search(r"^releases: (\d+)$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + ",")
-            results_file.write(re.search(r"^forks: (\d+)$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + ",")
-            results_file.write(re.search(r"^joins: (\d+)$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + ",")
-            results_file.write(re.search(r"^notifies: (\d+)$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + ",")
-            results_file.write(re.search(r"^waits: (\d+)$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + "\n")
+            results_file.write(re.search(r"^UNDEAD dependencies per thread: ([(\d)| ]+)$", result_pwrundeadextra.stdout,
+                                         flags=re.MULTILINE).group(1) + ",")
+            results_file.write(
+                re.search(r"^PWRUNDEAD dependencies per thread: ([(\d)| ]+)$", result_pwrundeadextra.stdout,
+                          flags=re.MULTILINE).group(1) + ",")
+            results_file.write(
+                re.search(r"^EXTRAEDGES dependencies per thread: ([(\d)| ]+)$", result_pwrundeadextra.stdout,
+                          flags=re.MULTILINE).group(1) + ",")
+            results_file.write(
+                re.search(r"^VC limit exceeded: (\d+)$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(
+                    1) + ",")
+            results_file.write(re.search(r"^VC limit exceeded by dependency: (\d+)$", result_pwrundeadextra.stdout,
+                                         flags=re.MULTILINE).group(1) + ",")
+            results_file.write(
+                re.search(r"^locks: (\d+)$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + ",")
+            results_file.write(
+                re.search(r"^reads: (\d+)$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + ",")
+            results_file.write(
+                re.search(r"^writes: (\d+)$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + ",")
+            results_file.write(
+                re.search(r"^acquires: (\d+)$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + ",")
+            results_file.write(
+                re.search(r"^releases: (\d+)$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + ",")
+            results_file.write(
+                re.search(r"^forks: (\d+)$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + ",")
+            results_file.write(
+                re.search(r"^joins: (\d+)$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + ",")
+            results_file.write(
+                re.search(r"^notifies: (\d+)$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + ",")
+            results_file.write(
+                re.search(r"^waits: (\d+)$", result_pwrundeadextra.stdout, flags=re.MULTILINE).group(1) + "\n")
 
-def create_graph_boxplot(results, key, min = 50):
+
+# === PLOTTING AND CONVERSION SCRIPTS ===
+
+def create_graph_boxplot(results, key, min=50):
     logfile_stats = {}
     for logfile in results:
         stats = results[logfile][key]
@@ -125,6 +232,7 @@ def create_graph_boxplot(results, key, min = 50):
     plt.savefig(os.path.join(RESULTS_PATH, key + '_boxplot.png'), bbox_inches='tight')
     plt.close()
 
+
 def create_graph_time_taken_phase_2_relation(results):
     logfiles = {}
 
@@ -133,11 +241,13 @@ def create_graph_time_taken_phase_2_relation(results):
             continue
 
         logfiles[result] = {
-            'relative_time_taken_phase2_undead': results[result]['time_taken_phase2_undead'] / results[result]['time_taken_full_undead'] * 100,
-            'relative_time_taken_phase2_pwrundead': results[result]['time_taken_phase2_pwrundead'] / results[result]['time_taken_full_pwrundead'] * 100,
-            'relative_time_taken_phase2_pwrundeadextra': results[result]['time_taken_phase2_pwrundeadextra'] / results[result]['time_taken_full_pwrundeadextra'] * 100
+            'relative_time_taken_phase2_undead': results[result]['time_taken_phase2_undead'] / results[result][
+                'time_taken_full_undead'] * 100,
+            'relative_time_taken_phase2_pwrundead': results[result]['time_taken_phase2_pwrundead'] / results[result][
+                'time_taken_full_pwrundead'] * 100,
+            'relative_time_taken_phase2_pwrundeadextra': results[result]['time_taken_phase2_pwrundeadextra'] /
+                                                         results[result]['time_taken_full_pwrundeadextra'] * 100
         }
-
 
     df = pandas.DataFrame({
         'UNDEAD': [logfiles[x]['relative_time_taken_phase2_undead'] for x in logfiles],
@@ -153,6 +263,7 @@ def create_graph_time_taken_phase_2_relation(results):
     plt.margins(y=0.1)
     plt.savefig(os.path.join(RESULTS_PATH, 'time_taken_phase_2_relation.png'), bbox_inches='tight')
     plt.close()
+
 
 def create_graph_time_taken(results):
     logfiles = {}
@@ -171,7 +282,6 @@ def create_graph_time_taken(results):
             'pwrundeadextra': extraedgesoverheadTime
         }
 
-
     df = pandas.DataFrame({
         'UNDEAD': [logfiles[x]['undead'] for x in logfiles],
         'UNDEAD_PWR': [logfiles[x]['pwrundead'] for x in logfiles],
@@ -187,6 +297,7 @@ def create_graph_time_taken(results):
     plt.savefig(os.path.join(RESULTS_PATH, 'time_taken_relation.png'), bbox_inches='tight')
     plt.close()
 
+
 def create_graph_event_types(results):
     index = results.keys()
     data = {
@@ -201,7 +312,8 @@ def create_graph_event_types(results):
     }
 
     for trace in results.values():
-        event_count = trace['reads'] + trace['writes'] + trace['acquires'] + trace['releases'] + trace['forks'] + trace['joins'] + trace['notifies'] + trace['waits']
+        event_count = trace['reads'] + trace['writes'] + trace['acquires'] + trace['releases'] + trace['forks'] + trace[
+            'joins'] + trace['notifies'] + trace['waits']
         data['reads'].append(trace['reads'] / event_count * 100)
         data['writes'].append(trace['writes'] / event_count * 100)
         data['acquires'].append(trace['acquires'] / event_count * 100)
@@ -222,6 +334,7 @@ def create_graph_event_types(results):
     plt.savefig(os.path.join(RESULTS_PATH, 'event_types.png'), bbox_inches='tight')
     plt.close()
 
+
 def create_graphs_from_results(results):
     create_graph_event_types(results)
     create_graph_time_taken_phase_2_relation(results)
@@ -230,9 +343,11 @@ def create_graphs_from_results(results):
     create_graph_boxplot(results, 'pwr_deps_thread', 1000)
     create_graph_boxplot(results, 'extra_deps_thread', 50)
 
+
 def create_deps_table(results):
     with open(os.path.join(RESULTS_PATH, 'deps_table.csv'), 'w') as results_file:
-        results_file.write('trace,undead_deps_sum,undead_deps_thread,pwr_deps_sum,pwr_deps_thread,extra_deps_sum,extra_deps_thread\n')
+        results_file.write(
+            'trace,undead_deps_sum,undead_deps_thread,pwr_deps_sum,pwr_deps_thread,extra_deps_sum,extra_deps_thread\n')
         for trace in results:
             if sum(results[trace]['undead_deps_thread']) == 0:
                 continue
@@ -243,6 +358,7 @@ def create_deps_table(results):
             results_file.write('-'.join([str(x) for x in results[trace]['pwr_deps_thread']]) + ',')
             results_file.write(str(sum(results[trace]['extra_deps_thread'])) + ',')
             results_file.write('-'.join([str(x) for x in results[trace]['extra_deps_thread']]) + '\n')
+
 
 def create_events_table(results):
     with open(os.path.join(RESULTS_PATH, 'events_table.csv'), 'w') as results_file:
@@ -258,11 +374,13 @@ def create_events_table(results):
             results_file.write(str(trace['notifies']) + ',')
             results_file.write(str(trace['waits']) + '\n')
 
+
 def create_trace_info_table(results):
     with open(os.path.join(RESULTS_PATH, 'trace_infos.csv'), 'w') as results_file:
         results_file.write('trace,races_undead,races_pwrundead,races_pwrundeadextra,events,locks\n')
         for key, trace in results.items():
-            event_count = trace['reads'] + trace['writes'] + trace['acquires'] + trace['releases'] + trace['forks'] + trace['joins'] + trace['notifies'] + trace['waits']
+            event_count = trace['reads'] + trace['writes'] + trace['acquires'] + trace['releases'] + trace['forks'] + \
+                          trace['joins'] + trace['notifies'] + trace['waits']
             results_file.write(key + ',')
             results_file.write(str(trace['races_undead']) + ',')
             results_file.write(str(trace['races_pwrundead']) + ',')
@@ -270,30 +388,38 @@ def create_trace_info_table(results):
             results_file.write(str(event_count) + ',')
             results_file.write(str(trace['locks']) + '\n')
 
+
 def create_timing_table(results):
     with open(os.path.join(RESULTS_PATH, 'timing_table.csv'), 'w') as results_file:
         results_file.write('trace,detector,time_taken_full (ms),time_taken_phase_1 (ms),time_taken_phase_2 (ms)\n')
         for key, trace in results.items():
             if trace['time_taken_full_undead'] < 10:
                 continue
-            for detectorKey, detectorName in [('undead', 'UNDEAD'), ('pwrundead', 'UNDEAD_PWR'), ('pwrundeadextra', 'UNDEAD_PWR_EXTRA_EARLY')]:
+            for detectorKey, detectorName in [('undead', 'UNDEAD'), ('pwrundead', 'UNDEAD_PWR'),
+                                              ('pwrundeadextra', 'UNDEAD_PWR_EXTRA_EARLY')]:
                 results_file.write(key + ',')
                 results_file.write(detectorName + ',')
                 results_file.write(str(trace['time_taken_full_' + detectorKey]) + ',')
-                results_file.write(str(trace['time_taken_full_' + detectorKey] - trace['time_taken_phase2_' + detectorKey]) + ',')
+                results_file.write(
+                    str(trace['time_taken_full_' + detectorKey] - trace['time_taken_phase2_' + detectorKey]) + ',')
                 results_file.write(str(trace['time_taken_phase2_' + detectorKey]) + '\n')
+
 
 def create_vc_exceeded_table(results):
     with open(os.path.join(RESULTS_PATH, 'vc_exceeded_table.csv'), 'w') as results_file:
-        results_file.write('trace,vc_limit_exceeded_counter,vc_limit_exceeded_deps_counter,percentage of deps, percentage of deps extra\n')
+        results_file.write(
+            'trace,vc_limit_exceeded_counter,vc_limit_exceeded_deps_counter,percentage of deps, percentage of deps extra\n')
         for key, trace in results.items():
             if trace['vc_limit_exceeded'] < 10:
                 continue
             results_file.write(key + ',')
             results_file.write(str(trace['vc_limit_exceeded']) + ',')
             results_file.write(str(trace['vc_limit_exceeded_dep_counter']) + ',')
-            results_file.write("{:.2f}".format(trace['vc_limit_exceeded_dep_counter'] / sum(trace['pwr_deps_thread']) * 100) + ',')
-            results_file.write("{:.2f}".format(trace['vc_limit_exceeded_dep_counter'] / (sum(trace['pwr_deps_thread']) + sum(trace['extra_deps_thread'])) * 100) + '\n')
+            results_file.write(
+                "{:.2f}".format(trace['vc_limit_exceeded_dep_counter'] / sum(trace['pwr_deps_thread']) * 100) + ',')
+            results_file.write("{:.2f}".format(trace['vc_limit_exceeded_dep_counter'] / (
+                    sum(trace['pwr_deps_thread']) + sum(trace['extra_deps_thread'])) * 100) + '\n')
+
 
 def read_results():
     logfiles = {}
@@ -329,13 +455,13 @@ def read_results():
             'notifies': int(data[23]),
             'waits': int(data[24])
         }
-    
+
     return logfiles
-        
+
 
 pathlib.Path(RESULTS_PATH).mkdir(parents=True, exist_ok=True)
 open(os.path.join(RESULTS_PATH, 'results.csv'), 'w').close()
-build_and_write_results(5)
+build_and_write_results()  # TODO: replace with new implementation.
 
 results = read_results()
 create_graphs_from_results(results)

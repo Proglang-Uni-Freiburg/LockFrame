@@ -27,9 +27,9 @@ public:
     void report_race(DataRace);
     std::vector<DataRace> get_races();
 #ifdef COLLECT_STATISTICS
-    void report_statistic(StatisticReport);
+    void report_statistic(const StatisticReport&);
     void report_statistic(std::string, std::string);
-    void report_statistic(std::string, std::vector<size_t>);
+    void report_statistic(std::string, const std::vector<size_t>&);
     void report_statistic(std::string, size_t);
 #endif
 };

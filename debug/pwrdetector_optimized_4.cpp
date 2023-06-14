@@ -447,24 +447,23 @@ void PWRDetectorOptimized4::wait_event(ThreadID thread_id, TracePosition trace_p
 }
 
 void PWRDetectorOptimized4::get_races() {
-    // Prints stats formatted for python plot file.
+    // Statistic reporting.
+#ifdef COLLECT_STATISTICS
+    this->lockframe->report_statistic("reads", reads);
+    this->lockframe->report_statistic("writes", writes);
+    this->lockframe->report_statistic("acquires", acquires);
+    this->lockframe->report_statistic("releases", releases);
+    this->lockframe->report_statistic("forks", forks);
+    this->lockframe->report_statistic("joins", joins);
+    this->lockframe->report_statistic("notify", notifiesCnt);
+    this->lockframe->report_statistic("notifywait", notifywaits);
+    this->lockframe->report_statistic("threads", threads.size());
+    this->lockframe->report_statistic("resources", resources.size());
+    this->lockframe->report_statistic("condCnt", std::vector<size_t> {static_cast<unsigned long>(cond2Cnt), static_cast<unsigned long>(cond1Cnt)});
+    this->lockframe->report_statistic("cntReadsNoSync", std::vector<size_t> {static_cast<unsigned long>(cntReadsNoSync), static_cast<unsigned long>(cntReads)});
+    this->lockframe->report_statistic("cntReleasesOnlyReads", std::vector<size_t> {static_cast<unsigned long>(cntReleasesOnlyReads), static_cast<unsigned long>(cntReleases)});
+#endif //COLLECT_STATISTICS
 
-    printf("\"condCnt\": {\n\t\"5\": (%d, %d)\n},\n", cond2Cnt, cond1Cnt);
-    printf("\"cntReadsNoSync\": (%d, %d),\n", cntReadsNoSync, cntReads);
-    printf("\"cntReleasesOnlyReads\": (%d, %d),\n", cntReleasesOnlyReads, cntReleases);
-    printf("\"threads\": %d,\n", threads.size());
-    printf("\"resources\": %d,\n", resources.size());
-
-    printf("\"events\": {\n");
-    printf("\t\"reads\": %d,\n", reads);
-    printf("\t\"writes\": %d,\n", writes);
-    printf("\t\"acquires\": %d,\n", acquires);
-    printf("\t\"releases\": %d,\n", releases);
-    printf("\t\"forks\": %d,\n", forks);
-    printf("\t\"joins\": %d,\n", joins);
-    printf("\t\"notify\": %d,\n", notifiesCnt);
-    printf("\t\"notifywait\": %d\n", notifywaits);
-    printf("},\n");
 
     // History stats calculation
     int history_res_min = INT32_MAX;

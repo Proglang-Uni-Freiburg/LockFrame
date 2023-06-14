@@ -1,3 +1,4 @@
+#include <utility>
 #include <vector>
 #include <sstream>
 #include "lockframe.hpp"
@@ -60,20 +61,20 @@ std::string stringifyStatVector(const std::vector<unsigned long> &v) {
 }
 
 // statistics take several overloads, but always break down into string representation
-void LockFrame::report_statistic(StatisticReport statistic) {
+void LockFrame::report_statistic(const StatisticReport& statistic) {
     statistics.push_back(statistic);
 }
 
 void LockFrame::report_statistic(std::string key, std::string value) {
-    statistics.push_back(StatisticReport{key, value});
+    statistics.push_back(StatisticReport{std::move(key), std::move(value)});
 }
 
-void LockFrame::report_statistic(std::string key, std::vector<size_t> value) {
-    statistics.push_back(StatisticReport{key, stringifyStatVector(value)});
+void LockFrame::report_statistic(std::string key, const std::vector<size_t>& value) {
+    statistics.push_back(StatisticReport{std::move(key), stringifyStatVector(value)});
 }
 
 void LockFrame::report_statistic(std::string key, size_t value) {
-    statistics.push_back(StatisticReport{key, std::to_string(value)});
+    statistics.push_back(StatisticReport{std::move(key), std::to_string(value)});
 }
 
 #endif

@@ -6,7 +6,7 @@
 class LockFrame;
 class Detector {
     public:
-        LockFrame* lockframe;
+        LockFrame* lockframe{};
         virtual void read_event(ThreadID, TracePosition, ResourceName) {}
         virtual void write_event(ThreadID, TracePosition, ResourceName) {}
         virtual void acquire_event(ThreadID, TracePosition, ResourceName) {}
